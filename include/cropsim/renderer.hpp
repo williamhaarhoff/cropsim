@@ -9,12 +9,7 @@
 
 namespace cropsim {
 
-struct View2D {
-    double min_x{};
-    double min_y{};
-    double max_x{};
-    double max_y{};
-};
+using View2D = Aabb;
 
 struct GrayscaleImage {
     std::size_t width{};

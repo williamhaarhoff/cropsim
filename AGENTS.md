@@ -145,19 +145,22 @@ Acceptance criteria:
   - A second test-only generator can be added without editing the world-building control flow, demonstrating that
     the abstraction actually removes the current type-specific branch.
 
-# Current milestone
+
 Goal:
-Introduce spatial indexing / crop ordering scheme optimised for sequential rendering (sequential frames will be spatially close, or will overlap).
-- zigzag ordering of crops along the row, so observation along the row maximises cache hits.
-- spatial lookups need to consider the extent of crops, not just the centroid, likely use world aligned bounding box
-- do not over optimise at the expense of world generation time, building the spatial index for 10M, crops should take <5 seconds.
+Add a deterministic, immutable uniform-grid spatial index to World. Index crops by their world-aligned extent
+without changing crop IDs or canonical crop storage order. Expose deterministic AABB intersection queries and
+update the renderer to use them. Serialize the index in a new snapshot version and validate it during
+deserialization. Construction must remain linear in crop count for fixed density.
 
 Acceptance criteria:
 - world representation has includes the spatial index which can also be serialised deterministically
 - spatial indexing / crop ordering is deterministic
-- bench marking tests (in test suite) for both world creation and lookup
+- bench marking tests (in test suite) for both world creation and lookup reporting: lookup density, construction time, lookup latency, candidate count, and memory overhead.
     - world is simple square, density is kept the same
     - 50 Crops - small test size
     - 1000 Crops - short run
     - 1M Crops - single field size test 
     - 10M Crops - multi field test
+
+# Current milestone
+

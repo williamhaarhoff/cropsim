@@ -24,7 +24,8 @@ GrayscaleImage render(const World& world, const View2D view, const std::size_t w
     const auto scale_x = (view.max_x - view.min_x) / static_cast<double>(width);
     const auto scale_y = (view.max_y - view.min_y) / static_cast<double>(height);
 
-    for (const auto& crop : world.crops()) {
+    for (const auto crop_index : world.query(view)) {
+        const auto& crop = world.crops()[crop_index];
         const auto first_column = static_cast<std::size_t>(std::clamp(
             std::floor((crop.x - crop.radius - view.min_x) / scale_x), 0.0,
             static_cast<double>(width - 1U)));

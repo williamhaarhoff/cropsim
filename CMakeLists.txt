@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 project(cropsim VERSION 0.1.0 LANGUAGES CXX)
 
 option(CROPSIM_BUILD_TESTS "Build cropsim tests" ON)
+option(CROPSIM_BUILD_BENCHMARKS "Build opt-in scalability benchmarks" OFF)
 
 find_package(yaml-cpp REQUIRED)
 
@@ -11,6 +12,7 @@ add_library(cropsim
     src/generators/grid_generator.cpp
     src/renderer.cpp
     src/snapshot.cpp
+    src/spatial_index.cpp
     src/world.cpp
     src/yaml.cpp
 )
@@ -33,4 +35,13 @@ if(CROPSIM_BUILD_TESTS)
     target_compile_options(cropsim_tests PRIVATE -Wall -Wextra -Wpedantic)
     include(${doctest_DIR}/doctest.cmake)
     doctest_discover_tests(cropsim_tests)
+endif()
+
+if(CROPSIM_BUILD_BENCHMARKS)
+    enable_testing()
+    add_executable(cropsim_spatial_benchmark tests/spatial_benchmark.cpp)
+    target_link_libraries(cropsim_spatial_benchmark PRIVATE cropsim::cropsim)
+    target_compile_options(cropsim_spatial_benchmark PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME cropsim_spatial_benchmark COMMAND cropsim_spatial_benchmark)
+    set_tests_properties(cropsim_spatial_benchmark PROPERTIES LABELS benchmark)
 endif()

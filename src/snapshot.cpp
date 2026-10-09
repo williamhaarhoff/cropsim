@@ -90,13 +90,30 @@ std::vector<std::byte> serialise_snapshot(const World& world) {
         append_double(output, crop.y);
         append_double(output, crop.radius);
     }
+    const auto& index = world.spatial_index();
+    append_double(output, index.bounds().min_x);
+    append_double(output, index.bounds().min_y);
+    append_double(output, index.bounds().max_x);
+    append_double(output, index.bounds().max_y);
+    append_double(output, index.cell_size());
+    append_integer(output, static_cast<std::uint64_t>(index.columns()));
+    append_integer(output, static_cast<std::uint64_t>(index.rows()));
+    append_integer(output, static_cast<std::uint64_t>(index.cell_offsets().size()));
+    for (const auto offset : index.cell_offsets()) {
+        append_integer(output, static_cast<std::uint64_t>(offset));
+    }
+    append_integer(output, static_cast<std::uint64_t>(index.references().size()));
+    for (const auto reference : index.references()) {
+        append_integer(output, static_cast<std::uint64_t>(reference));
+    }
     return output;
 }
 
 World deserialise_snapshot(const std::vector<std::byte>& snapshot) {
     Reader reader(snapshot);
     reader.expect_magic();
-    if (reader.integer<std::uint32_t>() != world_snapshot_version) {
+    const auto version = reader.integer<std::uint32_t>();
+    if (version != 1U && version != world_snapshot_version) {
         throw std::runtime_error("unsupported world snapshot version");
     }
     const auto seed = reader.integer<std::uint64_t>();
@@ -110,10 +127,44 @@ World deserialise_snapshot(const std::vector<std::byte>& snapshot) {
         crops.push_back(Crop{reader.integer<std::uint64_t>(), reader.floating_point(),
                              reader.floating_point(), reader.floating_point()});
     }
+    World world(seed, std::move(crops));
+    if (version == 1U) {
+        if (!reader.finished()) {
+            throw std::runtime_error("world snapshot has trailing data");
+        }
+        return world;
+    }
+
+    const Aabb stored_bounds{reader.floating_point(), reader.floating_point(),
+                             reader.floating_point(), reader.floating_point()};
+    const auto stored_cell_size = reader.floating_point();
+    const auto columns = reader.integer<std::uint64_t>();
+    const auto rows = reader.integer<std::uint64_t>();
+    const auto offsets_count = reader.integer<std::uint64_t>();
+    const auto& expected = world.spatial_index();
+    if (!(stored_bounds == expected.bounds()) || stored_cell_size != expected.cell_size() ||
+        columns != expected.columns() || rows != expected.rows() ||
+        offsets_count != expected.cell_offsets().size()) {
+        throw std::runtime_error("world snapshot spatial index metadata is invalid");
+    }
+    for (const auto expected_offset : expected.cell_offsets()) {
+        if (reader.integer<std::uint64_t>() != expected_offset) {
+            throw std::runtime_error("world snapshot spatial index offsets are invalid");
+        }
+    }
+    const auto references_count = reader.integer<std::uint64_t>();
+    if (references_count != expected.references().size()) {
+        throw std::runtime_error("world snapshot spatial index reference count is invalid");
+    }
+    for (const auto expected_reference : expected.references()) {
+        if (reader.integer<std::uint64_t>() != expected_reference) {
+            throw std::runtime_error("world snapshot spatial index references are invalid");
+        }
+    }
     if (!reader.finished()) {
         throw std::runtime_error("world snapshot has trailing data");
     }
-    return World(seed, std::move(crops));
+    return world;
 }
 
 void save_snapshot(const World& world, const std::filesystem::path& path) {
