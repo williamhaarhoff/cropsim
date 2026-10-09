@@ -29,3 +29,28 @@ generators:
 ```
 
 World snapshots use a versioned, little-endian binary representation. The built-in headless renderer produces in-memory 8-bit grayscale images and portable PGM files.
+
+## Optional GPU viewer
+
+The deterministic CPU renderer remains the reference for tests and observations. A separate SDL3/SDL_GPU Vulkan viewer can be enabled for interactive inspection:
+
+```sh
+nix run .#cropsim-viewer -- world.yaml
+```
+
+Alternatively, build it directly with CMake:
+
+```sh
+cmake -S . -B build-viewer -G Ninja -DCROPSIM_BUILD_VIEWER=ON
+cmake --build build-viewer
+build-viewer/cropsim_viewer world.yaml
+build-viewer/cropsim_viewer world.cropsim
+```
+
+The viewer detects YAML descriptions and binary snapshots from their contents. The explicit `--yaml` and `--snapshot` forms remain available when needed.
+
+Drag with the left mouse button to pan, or pan with the arrow keys or Vim's `H`, `J`, `K`, and `L` keys. Use the wheel or `+` and `-` to zoom, press `F` to frame the world, and `Q` or Escape to exit. Pass `--check` to validate and load an input without opening a display.
+
+`format_terminal_image` provides bounded ASCII previews for CI logs and ANSI truecolor half-block previews for interactive diagnostics. `cropsim::testing::compare_images` emits expected, actual, and difference previews and writes full-resolution PGM artifacts when an image comparison fails.
+
+For a one-frame live graphics check, configure with `-DCROPSIM_ENABLE_VIEWER_SMOKE_TEST=ON` and run `ctest -L smoke`. This test is off by default because it requires a working display and Vulkan device.

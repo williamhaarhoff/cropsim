@@ -1,0 +1,3 @@
+seed: 1
+crops:
+  - {position: [0, 0], radius: 0.25}
