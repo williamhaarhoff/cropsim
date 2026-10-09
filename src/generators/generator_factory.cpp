@@ -12,6 +12,10 @@
 
 namespace cropsim::generators {
 
+std::vector<EllipseLeaf> CropGenerator::generate(Context &context) const {
+  return generate(YAML::Node{}, context.random);
+}
+
 void PlacementGeneratorFactory::register_generator(std::string name,
                                                    Creator creator) {
   if (name.empty() || !creator) {
@@ -41,6 +45,22 @@ PlacementGeneratorFactory::create(const std::string_view name) const {
 
 void CropGeneratorFactory::register_generator(std::string name,
                                               Creator creator) {
+  if (!creator) {
+    throw std::invalid_argument("crop generator registration requires a name and creator");
+  }
+  register_generator(std::move(name),
+                     [creator = std::move(creator)](const YAML::Node &node,
+                                                    const ModifierFieldSet *fields) {
+                       auto result = creator();
+                       if (result && node.IsDefined() && !node.IsNull()) {
+                         result->configure(node, fields);
+                       }
+                       return result;
+                     });
+}
+
+void CropGeneratorFactory::register_generator(std::string name,
+                                              ConfiguredCreator creator) {
   if (name.empty() || !creator) {
     throw std::invalid_argument(
         "crop generator registration requires a name and creator");
@@ -54,13 +74,14 @@ void CropGeneratorFactory::register_generator(std::string name,
 }
 
 std::unique_ptr<CropGenerator>
-CropGeneratorFactory::create(const std::string_view name) const {
+CropGeneratorFactory::create(const std::string_view name, const YAML::Node &node,
+                             const ModifierFieldSet *modifiers) const {
   const auto found = creators_.find(std::string(name));
   if (found == creators_.end()) {
     throw std::invalid_argument("unknown crop generator type: " +
                                 std::string(name));
   }
-  auto generator = found->second();
+  auto generator = found->second(node, modifiers);
   if (!generator) {
     throw std::runtime_error("crop generator creator returned null");
   }
@@ -125,6 +146,7 @@ RowGeneratorFactory::create(const std::string_view name) const {
 
 GeneratorRegistry make_builtin_generator_registry() {
   GeneratorRegistry registry;
+  registry.modifier_fields() = make_builtin_modifier_field_factory();
   registry.placement().register_generator(
       "grid", [] { return std::make_unique<GridGenerator>(); });
   registry.placement().register_generator(

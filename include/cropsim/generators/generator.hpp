@@ -13,6 +13,7 @@ namespace cropsim::generators {
 
 class CropGeneratorFactory;
 class GeneratorRegistry;
+class ModifierFieldSet;
 
 struct Point2 final {
   double x{};
@@ -66,8 +67,16 @@ public:
 class CropGenerator {
 public:
   virtual ~CropGenerator() = default;
+  virtual void configure(const YAML::Node &, const ModifierFieldSet *) {}
   [[nodiscard]] virtual std::vector<EllipseLeaf>
   generate(const YAML::Node &node, MorphologyContext &context) const = 0;
+  struct Context final {
+    Point2 position;
+    MorphologyContext &random;
+    const std::vector<double> &modifiers;
+  };
+  [[nodiscard]] virtual std::vector<EllipseLeaf>
+  generate(Context &context) const;
 };
 
 } // namespace cropsim::generators

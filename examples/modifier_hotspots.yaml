@@ -1,0 +1,29 @@
+seed: 42
+generators:
+  - gentype: field_set
+    bounds: [[0, 0], [40, 0], [40, 20], [0, 20]]
+    count: 2
+    road_width: 2
+    modifier_fields:
+      patches:
+        gentype: gaussian_hotspots
+        count: 5
+        sigma: {mean: 6, min: 3, max: 9}
+        amplitude: {mean: 0.8, min: 0.4, max: 1.2}
+      vigor: {gentype: expression, expression: "clamp(patches, -1, 1)"}
+    field:
+      gentype: parallel_rows
+      row:
+        gentype: linear
+        crop:
+          gentype: generic
+          scale:
+            mean: 0.06
+            min: 0.04
+            max: 0.10
+            modifiers: [{field: vigor, operation: add, strength: 0.03}]
+          leaf_num:
+            mean: 4
+            min: 2
+            max: 10
+            modifiers: [{field: vigor, operation: add, strength: 4}]

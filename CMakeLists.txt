@@ -22,6 +22,7 @@ add_library(cropsim
     src/generators/generic_crop_generator.cpp
     src/generators/grid_generator.cpp
     src/generators/linear_row_generator.cpp
+    src/generators/modifier_field.cpp
     src/generators/parallel_row_field_generator.cpp
     src/image_assertion.cpp
     src/renderer.cpp
@@ -47,7 +48,8 @@ target_compile_options(cropsim PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Ws
 if(CROPSIM_BUILD_TESTS)
     enable_testing()
     find_package(doctest REQUIRED)
-    add_executable(cropsim_tests tests/world_tests.cpp tests/terminal_image_tests.cpp)
+    add_executable(cropsim_tests tests/world_tests.cpp tests/terminal_image_tests.cpp
+        tests/modifier_field_tests.cpp)
     target_link_libraries(cropsim_tests PRIVATE cropsim::cropsim doctest::doctest)
     target_compile_definitions(cropsim_tests PRIVATE
         CROPSIM_TEST_ARTIFACT_DIR="${CMAKE_CURRENT_BINARY_DIR}/test-artifacts"

@@ -1,12 +1,14 @@
 #pragma once
 
 #include "cropsim/generators/generator.hpp"
+#include "cropsim/generators/modifier_field.hpp"
 
 #include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <yaml-cpp/yaml.h>
 
 namespace cropsim::generators {
 
@@ -25,12 +27,16 @@ private:
 class CropGeneratorFactory final {
 public:
   using Creator = std::function<std::unique_ptr<CropGenerator>()>;
+  using ConfiguredCreator = std::function<std::unique_ptr<CropGenerator>(
+      const YAML::Node &, const ModifierFieldSet *)>;
   void register_generator(std::string name, Creator creator);
+  void register_generator(std::string name, ConfiguredCreator creator);
   [[nodiscard]] std::unique_ptr<CropGenerator>
-  create(std::string_view name) const;
+  create(std::string_view name, const YAML::Node &node = {},
+         const ModifierFieldSet *modifiers = nullptr) const;
 
 private:
-  std::unordered_map<std::string, Creator> creators_;
+  std::unordered_map<std::string, ConfiguredCreator> creators_;
 };
 
 class FieldGeneratorFactory final {
@@ -75,12 +81,15 @@ public:
   [[nodiscard]] const RowGeneratorFactory &rows() const noexcept {
     return rows_;
   }
+  [[nodiscard]] ModifierFieldFactory &modifier_fields() noexcept { return modifier_fields_; }
+  [[nodiscard]] const ModifierFieldFactory &modifier_fields() const noexcept { return modifier_fields_; }
 
 private:
   PlacementGeneratorFactory placement_;
   FieldGeneratorFactory fields_;
   RowGeneratorFactory rows_;
   CropGeneratorFactory crops_;
+  ModifierFieldFactory modifier_fields_;
 };
 
 [[nodiscard]] GeneratorRegistry make_builtin_generator_registry();

@@ -40,6 +40,7 @@ public:
 
   [[nodiscard]] double symmetric_unit() noexcept;
   [[nodiscard]] std::uint64_t next_id() const noexcept { return next_id_; }
+  [[nodiscard]] std::uint64_t world_seed() const noexcept { return world_seed_; }
   [[nodiscard]] MorphologyContext
   morphology(std::uint64_t crop_id) const noexcept;
   [[nodiscard]] MorphologyContext

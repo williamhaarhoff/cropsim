@@ -1,6 +1,7 @@
 #include "cropsim/generators/field_set_generator.hpp"
 
 #include "cropsim/generators/generator_factory.hpp"
+#include "cropsim/generators/modifier_field.hpp"
 #include "geometry.hpp"
 
 #include <algorithm>
@@ -218,13 +219,20 @@ void FieldSetGenerator::generate(const YAML::Node &node,
   const auto field_node = require_child(node, "field");
   const auto row_node = require_child(field_node, "row");
   const auto crop_node = require_child(row_node, "crop");
+  const auto domain = yaml_polygon(node["bounds"]);
+  auto modifiers = ModifierFieldSet::compile(node["modifier_fields"], domain,
+                                             context.world_seed(), key,
+                                             registry.modifier_fields());
   const auto field_generator =
       registry.fields().create(field_node["gentype"].as<std::string>());
   const auto row_generator =
       registry.rows().create(row_node["gentype"].as<std::string>());
   const auto crop_generator =
-      registry.crops().create(crop_node["gentype"].as<std::string>());
+      registry.crops().create(crop_node["gentype"].as<std::string>(), crop_node,
+                              &modifiers);
   const auto fields = generate_fields(node, key);
+  std::vector<double> modifier_values;
+  modifier_values.reserve(modifiers.size());
   for (std::size_t field_index = 0; field_index < fields.size(); ++field_index) {
     const auto field_key = key.child(field_domain, field_index);
     const auto rows = field_generator->generate(field_node, fields[field_index],
@@ -246,7 +254,10 @@ void FieldSetGenerator::generate(const YAML::Node &node,
            ++crop_index) {
         const auto crop_key = row_key.child(crop_domain, crop_index);
         auto morphology = context.morphology(crop_key);
-        auto leaves = crop_generator->generate(crop_node, morphology);
+        modifiers.evaluate(positions[crop_index], modifier_values);
+        CropGenerator::Context crop_context{positions[crop_index], morphology,
+                                            modifier_values};
+        auto leaves = crop_generator->generate(crop_context);
         destination.push_back(context.make_crop(positions[crop_index].x,
                                                 positions[crop_index].y,
                                                 std::move(leaves)));

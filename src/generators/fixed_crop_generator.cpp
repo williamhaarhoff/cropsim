@@ -48,4 +48,14 @@ FixedCropGenerator::generate(const YAML::Node &node,
   }
   return result;
 }
+
+void FixedCropGenerator::configure(const YAML::Node &node,
+                                   const ModifierFieldSet *) {
+  MorphologyContext unused(0U);
+  configured_leaves_ = generate(node, unused);
+}
+
+std::vector<EllipseLeaf> FixedCropGenerator::generate(Context &) const {
+  return configured_leaves_;
+}
 } // namespace cropsim::generators

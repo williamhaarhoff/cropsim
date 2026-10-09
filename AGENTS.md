@@ -165,7 +165,7 @@ Acceptance criteria:
 Goal:
 Use SDL Render/Graphics stack. CPU rendering is deterministic and is the source of truth. Viewing utility uses sped up GPU rendering, renders are approximate, not the source of truth. Support terminal rendering in so that unit tests can print images to terminal in case of failure. Nix derivation for viewer.
 
-# Current milestone
+# Past milestone
 
 Goal:
 Implement a deterministic hierarchy of transient field-set, field, row, and crop generators. Add a jittered-lattice Voronoi field-set generator, parallel-row field generator, and linear row generator while preserving legacy grid generation and snapshot v3 byte-for-byte.
@@ -196,3 +196,26 @@ Acceptance criteria:
 - Existing grid snapshot fixtures remain byte-identical and snapshot v3 is unchanged.
 - Reporting benchmarks cover 10, 100, and 500 fields plus large crop counts without wall-clock correctness thresholds.
 - The library, viewer and shaders, complete test suite, and benchmark target build successfully through CMake and the Nix flake.
+
+# Current milestone
+
+Goal: Add transient named scalar modifier fields to field sets so crop morphology can vary by
+position without changing `World` or snapshot v3. Compile fields once, reuse an allocation-free
+evaluation program per crop, and permit one field to drive multiple correlated parameters.
+
+Architecture and acceptance criteria:
+- Provide public `ModifierField`, `ModifierFieldFactory`, and immutable `ModifierFieldSet` APIs,
+  with registry injection, pre-resolved names, a reusable evaluation buffer, and a configured
+  crop-generation context containing position, morphology PRNG, and modifier values.
+- Support restricted expressions, deterministic fractal gradient noise, and explicit or generated
+  elliptical Gaussian hotspots. Sort field names, domain-separate procedural seeds, topologically
+  evaluate dependencies, and reject unknown references, cycles, reserved names, invalid results,
+  and bounded-resource violations.
+- Bind `scale`, `leaf_num`, `leaf_length`, `leaf_width`, `leaf_offset`, and `leaf_orientation` using
+  ordered `relative`, `add`, and `replace` operations followed by an optional final clamp. Preserve
+  old scalar/distribution syntax, draw frequency, legacy random order, and snapshot bytes.
+- Provide deterministic headless grayscale previews with concave-domain masking, automatic or
+  explicit normalization, mid-gray constant fields, PGM output, and terminal formatting reuse.
+- Document and test expressions, dependencies, noise, hotspots, every binding operation, clamps,
+  rounding, correlation, registry extensibility, diagnostics, compatibility, and million-crop
+  reporting benchmarks. Modifier definitions and caches remain transient and field-set-only.

@@ -132,6 +132,42 @@ World snapshots use a versioned, little-endian binary representation. The built-
 renderer orthographically projects all leaves and produces their binary occupancy union as
 in-memory 8-bit grayscale images and portable PGM files.
 
+## Spatial morphology modifiers
+
+Field sets may declare reusable scalar fields. Coordinates `x` and `y` are world metres; `u` and
+`v` normalize the outer field-set AABB to `[0, 1]`. Expressions may refer to other named fields,
+regardless of declaration order. Fractal noise uses deterministic 2D lattice gradients with
+quintic interpolation; Gaussian hotspots sum elliptical kernels and are not implicitly normalized.
+
+```yaml
+modifier_fields:
+  patches: {gentype: gaussian_hotspots, count: 8,
+            sigma: {mean: 12, min: 6, max: 20},
+            amplitude: {mean: 0.8, min: 0.4, max: 1.2}}
+  vigor: {gentype: expression, expression: "clamp(patches, -1, 1)"}
+# ... field/row nesting ...
+crop:
+  gentype: generic
+  scale:
+    mean: 0.06
+    min: 0.02
+    max: 0.14
+    modifiers: [{field: vigor, operation: add, strength: 0.04}]
+  leaf_num:
+    base: {mean: 5, min: 3, max: 7}
+    modifiers: [{field: vigor, operation: add, strength: 2}]
+    clamp: [1, 12]
+```
+
+Bindings run in YAML order after the base distribution is sampled. `relative` multiplies by `1 + strength * signal`, `add` adds
+`strength * signal`, and `replace` assigns `offset + strength * signal`; the optional clamp runs
+last. When a parameter distribution explicitly supplies both `min` and `max`, those bounds also
+clamp the final modified value; an explicit `clamp` overrides them. Scale and leaf count are sampled once per crop, while leaf dimensions, offset, and
+orientation are sampled once per leaf. Modifier definitions and evaluated values are transient;
+snapshot v3 contains only the resulting crop geometry. Use `render_modifier_field` with an
+optional value range to create a `GrayscaleImage`, then `write_pgm` or `format_terminal_image` for
+file and CI previews.
+
 ## Optional GPU viewer
 
 The deterministic CPU renderer remains the reference for tests and observations. A separate SDL3/SDL_GPU Vulkan viewer can be enabled for interactive inspection:
