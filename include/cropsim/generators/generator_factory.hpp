@@ -33,6 +33,28 @@ private:
   std::unordered_map<std::string, Creator> creators_;
 };
 
+class FieldGeneratorFactory final {
+public:
+  using Creator = std::function<std::unique_ptr<FieldGenerator>()>;
+  void register_generator(std::string name, Creator creator);
+  [[nodiscard]] std::unique_ptr<FieldGenerator>
+  create(std::string_view name) const;
+
+private:
+  std::unordered_map<std::string, Creator> creators_;
+};
+
+class RowGeneratorFactory final {
+public:
+  using Creator = std::function<std::unique_ptr<RowGenerator>()>;
+  void register_generator(std::string name, Creator creator);
+  [[nodiscard]] std::unique_ptr<RowGenerator>
+  create(std::string_view name) const;
+
+private:
+  std::unordered_map<std::string, Creator> creators_;
+};
+
 class GeneratorRegistry final {
 public:
   [[nodiscard]] PlacementGeneratorFactory &placement() noexcept {
@@ -45,9 +67,19 @@ public:
   [[nodiscard]] const CropGeneratorFactory &crops() const noexcept {
     return crops_;
   }
+  [[nodiscard]] FieldGeneratorFactory &fields() noexcept { return fields_; }
+  [[nodiscard]] const FieldGeneratorFactory &fields() const noexcept {
+    return fields_;
+  }
+  [[nodiscard]] RowGeneratorFactory &rows() noexcept { return rows_; }
+  [[nodiscard]] const RowGeneratorFactory &rows() const noexcept {
+    return rows_;
+  }
 
 private:
   PlacementGeneratorFactory placement_;
+  FieldGeneratorFactory fields_;
+  RowGeneratorFactory rows_;
   CropGeneratorFactory crops_;
 };
 

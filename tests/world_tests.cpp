@@ -1,5 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
+#include <yaml-cpp/yaml.h>
 
 #include <algorithm>
 #include <cmath>
@@ -9,10 +10,13 @@
 #include <limits>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "cropsim/generators/generator_factory.hpp"
+#include "cropsim/generators/field_set_generator.hpp"
 #include "cropsim/generators/grid_generator.hpp"
 #include "cropsim/renderer.hpp"
 #include "cropsim/snapshot.hpp"
@@ -114,7 +118,8 @@ class TestGenerator final : public cropsim::generators::PlacementGenerator {
 public:
   void generate(const YAML::Node &,
                 cropsim::generators::GenerationContext &context,
-                const cropsim::generators::CropGeneratorFactory &,
+                cropsim::generators::GenerationKey,
+                const cropsim::generators::GeneratorRegistry &,
                 std::vector<cropsim::Crop> &destination) const override {
     destination.push_back(
         context.make_crop(context.symmetric_unit(), 4.0, 0.2));
@@ -128,6 +133,64 @@ public:
            cropsim::generators::MorphologyContext &) const override {
     return {{0.25, -0.5, 0.125, 0.75, 0.3}};
   }
+};
+
+class TestFieldGenerator final : public cropsim::generators::FieldGenerator {
+public:
+  std::vector<cropsim::generators::RowSegment>
+  generate(const YAML::Node &, const cropsim::generators::FieldRegion &field,
+           cropsim::generators::GenerationKey) const override {
+    return {{field.seed_index,
+             0U,
+             {1.0, 2.0},
+             {5.0, 2.0},
+             {{{0.0, 0.0}, {6.0, 0.0}, {6.0, 4.0}, {0.0, 4.0}}},
+             1.0}};
+  }
+};
+
+class TestRowGenerator final : public cropsim::generators::RowGenerator {
+public:
+  std::vector<cropsim::generators::Point2>
+  generate(const YAML::Node &, const cropsim::generators::RowSegment &,
+           cropsim::generators::GenerationKey) const override {
+    return {{2.0, 2.0}, {4.0, 2.0}};
+  }
+};
+
+class TwoRowFieldGenerator final : public cropsim::generators::FieldGenerator {
+public:
+  std::vector<cropsim::generators::RowSegment>
+  generate(const YAML::Node &, const cropsim::generators::FieldRegion &field,
+           cropsim::generators::GenerationKey) const override {
+    const cropsim::generators::Polygon2 boundary{
+        {{0.0, 0.0}, {10.0, 0.0}, {10.0, 5.0}, {0.0, 5.0}}};
+    return {{field.seed_index, 0U, {1.0, 1.0}, {9.0, 1.0}, boundary, 1.0},
+            {field.seed_index, 1U, {1.0, 3.0}, {9.0, 3.0}, boundary, 1.0}};
+  }
+};
+
+class VariableFirstRowGenerator final : public cropsim::generators::RowGenerator {
+public:
+  std::vector<cropsim::generators::Point2>
+  generate(const YAML::Node &node,
+           const cropsim::generators::RowSegment &row,
+           cropsim::generators::GenerationKey) const override {
+    if (row.row_index != 0U) {
+      return {{5.0, 3.0}};
+    }
+    std::vector<cropsim::generators::Point2> result;
+    const auto count = node["first_count"].as<std::size_t>();
+    for (std::size_t index = 0; index < count; ++index) {
+      result.push_back({1.0 + static_cast<double>(index), 1.0});
+    }
+    return result;
+  }
+};
+
+class FieldSetProbe final : public cropsim::generators::VoronoiFieldSetGenerator {
+public:
+  using VoronoiFieldSetGenerator::generate_fields;
 };
 
 } // namespace
@@ -400,6 +463,174 @@ generators:
 )";
   CHECK(cropsim::serialise_snapshot(cropsim::world_from_yaml(legacy)) ==
         cropsim::serialise_snapshot(cropsim::world_from_yaml(nested)));
+}
+
+TEST_CASE("field hierarchy fills a rectangular field in canonical order") {
+  constexpr std::string_view yaml = R"(
+seed: 19
+generators:
+  - gentype: field_set
+    bounds: [[0, 0], [10, 0], [10, 10], [0, 10]]
+    count: 1
+    road_width: 0
+    seed_jitter: 0
+    field:
+      gentype: parallel_rows
+      orientation: 0
+      row_spacing: 2
+      row_jitter: 0
+      headland: 0
+      row:
+        gentype: linear
+        crop_spacing: 2
+        along_jitter: 0
+        cross_jitter: 0
+        crop: {gentype: fixed, radius: 0.1}
+)";
+  const auto first = cropsim::world_from_yaml(yaml);
+  const auto second = cropsim::world_from_yaml(yaml);
+  CHECK(first == second);
+  REQUIRE(first.size() == 25U);
+  for (std::size_t index = 0; index < first.size(); ++index) {
+    CHECK(first.crops()[index].id == index);
+  }
+  CHECK(first.crops()[0].x == doctest::Approx(1.0));
+  CHECK(first.crops()[0].y == doctest::Approx(1.0));
+  CHECK(first.crops()[4].x == doctest::Approx(9.0));
+  CHECK(first.crops()[4].y == doctest::Approx(1.0));
+  CHECK(first.crops()[20].x == doctest::Approx(1.0));
+  CHECK(first.crops()[20].y == doctest::Approx(9.0));
+}
+
+TEST_CASE("field-set roads have exact width and preserve domain edges") {
+  const auto node = YAML::Load(R"(
+bounds: [[0, 0], [20, 0], [20, 10], [0, 10]]
+count: 2
+road_width: 2
+seed_jitter: 0
+)");
+  const auto fields = FieldSetProbe{}.generate_fields(node, {123U});
+  REQUIRE(fields.size() == 2U);
+  const auto x_bounds = [](const auto &field) {
+    auto minimum = std::numeric_limits<double>::infinity();
+    auto maximum = -minimum;
+    for (const auto &point : field.boundary.vertices) {
+      minimum = std::min(minimum, point.x);
+      maximum = std::max(maximum, point.x);
+    }
+    return std::pair<double, double>{minimum, maximum};
+  };
+  const auto first = x_bounds(fields[0]);
+  const auto second = x_bounds(fields[1]);
+  CHECK(first.first == doctest::Approx(0.0));
+  CHECK(second.second == doctest::Approx(20.0));
+  CHECK(second.first - first.second == doctest::Approx(2.0));
+}
+
+TEST_CASE("concave multi-field hierarchy is deterministic and bounded") {
+  constexpr std::string_view yaml = R"(
+seed: 991
+generators:
+  - gentype: field_set
+    bounds: [[0, 0], [30, 0], [30, 20], [18, 20], [18, 12], [12, 12], [12, 20], [0, 20]]
+    count: 4
+    road_width: 1
+    seed_jitter: 0.6
+    field:
+      gentype: parallel_rows
+      row_spacing: 2
+      headland: 0.25
+      row:
+        gentype: linear
+        crop_spacing: 1
+        crop: {gentype: generic, scale: 0.05, leaf_num: 3}
+)";
+  const auto first = cropsim::world_from_yaml(yaml);
+  const auto second = cropsim::world_from_yaml(yaml);
+  CHECK(first == second);
+  CHECK(cropsim::serialise_snapshot(first) == cropsim::serialise_snapshot(second));
+  CHECK(first.size() > 100U);
+  for (const auto &crop : first.crops()) {
+    CHECK(crop.x >= 0.0);
+    CHECK(crop.x <= 30.0);
+    CHECK(crop.y >= 0.0);
+    CHECK(crop.y <= 20.0);
+  }
+}
+
+TEST_CASE("injected field and row generators compose through a field set") {
+  auto registry = cropsim::generators::make_builtin_generator_registry();
+  registry.fields().register_generator(
+      "test_field", [] { return std::make_unique<TestFieldGenerator>(); });
+  registry.rows().register_generator(
+      "test_row", [] { return std::make_unique<TestRowGenerator>(); });
+  const auto world = cropsim::world_from_yaml(R"(
+generators:
+  - gentype: field_set
+    bounds: [[0, 0], [6, 0], [6, 4], [0, 4]]
+    count: 1
+    road_width: 0
+    field:
+      gentype: test_field
+      row:
+        gentype: test_row
+        crop: {gentype: fixed, radius: 0.2}
+)", registry);
+  REQUIRE(world.size() == 2U);
+  CHECK(world.crops()[0] == cropsim::Crop{0U, 2.0, 2.0, 0.2});
+  CHECK(world.crops()[1] == cropsim::Crop{1U, 4.0, 2.0, 0.2});
+}
+
+TEST_CASE("hierarchical morphology is stable when an earlier row grows") {
+  auto registry = cropsim::generators::make_builtin_generator_registry();
+  registry.fields().register_generator(
+      "two_rows", [] { return std::make_unique<TwoRowFieldGenerator>(); });
+  registry.rows().register_generator(
+      "variable_first",
+      [] { return std::make_unique<VariableFirstRowGenerator>(); });
+  const auto description_with = [](const std::size_t first_count) {
+    return std::string(R"(
+seed: 812
+generators:
+  - gentype: field_set
+    bounds: [[0, 0], [10, 0], [10, 5], [0, 5]]
+    count: 1
+    road_width: 0
+    field:
+      gentype: two_rows
+      row:
+        gentype: variable_first
+        first_count: )") + std::to_string(first_count) + R"(
+        crop:
+          gentype: generic
+          scale: {mean: 0.1, min: 0.05, max: 0.15}
+)";
+  };
+  const auto short_first =
+      cropsim::world_from_yaml(description_with(1U), registry);
+  const auto long_first = cropsim::world_from_yaml(description_with(3U), registry);
+  REQUIRE(short_first.size() == 2U);
+  REQUIRE(long_first.size() == 4U);
+  CHECK(short_first.crops().back().x == long_first.crops().back().x);
+  CHECK(short_first.crops().back().y == long_first.crops().back().y);
+  CHECK(short_first.crops().back().leaves == long_first.crops().back().leaves);
+  CHECK(short_first.crops().back().id != long_first.crops().back().id);
+}
+
+TEST_CASE("field hierarchy rejects invalid geometry and nested generators") {
+  const auto invalid = [](const std::string_view body) {
+    CHECK_THROWS(static_cast<void>(cropsim::world_from_yaml(body)));
+  };
+  invalid(R"(generators: [{gentype: field_set, bounds: [[0,0],[1,1],[0,1],[1,0]], count: 1}])");
+  invalid(R"(generators: [{gentype: field_set, bounds: [[0,0],[1,0],[1,1],[0,1]], count: 0}])");
+  invalid(R"(generators: [{gentype: field_set, bounds: [[0,0],[10,0],[10,10],[0,10]], count: 1, road_width: -1}])");
+  invalid(R"(
+generators:
+  - gentype: field_set
+    bounds: [[0,0],[10,0],[10,10],[0,10]]
+    count: 1
+    field: {gentype: unknown, row: {gentype: linear, crop: {gentype: fixed, radius: 1}}}
+)");
 }
 
 TEST_CASE("invalid snapshots are rejected") {

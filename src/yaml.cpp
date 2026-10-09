@@ -89,6 +89,7 @@ World world_from_yaml(const std::string_view yaml,
     if (!generators.IsSequence()) {
       throw std::invalid_argument("generators must be a sequence");
     }
+    std::uint64_t generator_index = 0U;
     for (const auto &generator : generators) {
       const auto gentype = generator["gentype"];
       if (!gentype) {
@@ -96,7 +97,10 @@ World world_from_yaml(const std::string_view yaml,
       }
       registry.placement()
           .create(gentype.as<std::string>())
-          ->generate(generator, context, registry.crops(), crops);
+          ->generate(generator, context,
+                     context.key(0x544f5047454e4552ULL, {generator_index}),
+                     registry, crops);
+      ++generator_index;
     }
   }
 

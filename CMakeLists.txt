@@ -1,19 +1,28 @@
 cmake_minimum_required(VERSION 3.20)
 project(cropsim VERSION 0.1.0 LANGUAGES CXX)
 
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
+
 option(CROPSIM_BUILD_TESTS "Build cropsim tests" ON)
 option(CROPSIM_BUILD_BENCHMARKS "Build opt-in scalability benchmarks" OFF)
 option(CROPSIM_BUILD_VIEWER "Build the optional SDL3/SDL_GPU viewer" OFF)
 option(CROPSIM_ENABLE_VIEWER_SMOKE_TEST "Enable the display/GPU viewer smoke test" OFF)
 
 find_package(yaml-cpp REQUIRED)
+find_package(Boost REQUIRED)
 
 add_library(cropsim
     src/generators/generation_context.cpp
     src/generators/generator_factory.cpp
     src/generators/fixed_crop_generator.cpp
+    src/generators/field_set_generator.cpp
+    src/generators/geometry.cpp
     src/generators/generic_crop_generator.cpp
     src/generators/grid_generator.cpp
+    src/generators/linear_row_generator.cpp
+    src/generators/parallel_row_field_generator.cpp
     src/image_assertion.cpp
     src/renderer.cpp
     src/snapshot.cpp
@@ -30,7 +39,9 @@ target_include_directories(cropsim
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
 )
+target_include_directories(cropsim SYSTEM PRIVATE ${Boost_INCLUDE_DIRS})
 target_link_libraries(cropsim PRIVATE yaml-cpp::yaml-cpp)
+target_link_libraries(cropsim PRIVATE Boost::headers)
 target_compile_options(cropsim PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
 
 if(CROPSIM_BUILD_TESTS)

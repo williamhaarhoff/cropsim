@@ -30,6 +30,7 @@
           sdl3
           vulkan-headers
           vulkan-loader
+          boost
           yaml-cpp
         ];
 
@@ -59,7 +60,7 @@
         };
 
         nativeBuildInputs = with pkgs; [ cmake ninja pkg-config ];
-        buildInputs = with pkgs; [ doctest yaml-cpp ];
+        buildInputs = with pkgs; [ boost doctest yaml-cpp ];
         cmakeFlags = [
           "-DCROPSIM_BUILD_TESTS=ON"
           "-DCROPSIM_BUILD_BENCHMARKS=ON"
@@ -104,6 +105,7 @@
       devShells.${system}.default = pkgs.mkShell {
         packages = with pkgs; [
           cmake
+          boost
           doctest
           shaderc
           sdl3

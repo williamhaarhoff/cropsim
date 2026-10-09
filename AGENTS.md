@@ -168,31 +168,31 @@ Use SDL Render/Graphics stack. CPU rendering is deterministic and is the source 
 # Current milestone
 
 Goal:
-Separate crop placement from crop geometry generation. Placement generators decide where crops exist; crop generators independently create their immutable, ordered leaf geometry. Implement a deterministic generic rosette crop generator.
+Implement a deterministic hierarchy of transient field-set, field, row, and crop generators. Add a jittered-lattice Voronoi field-set generator, parallel-row field generator, and linear row generator while preserving legacy grid generation and snapshot v3 byte-for-byte.
 
 Architecture:
-- Replace the generic generator API with typed `PlacementGenerator`, `CropGenerator`, and corresponding factories collected in a `GeneratorRegistry`.
-- Placement generators receive the crop-generator factory and invoke the selected crop generator once per crop.
-- Crop generators return `std::vector<EllipseLeaf>` and do not assign world positions or entity IDs.
-- Retain the global placement PRNG and sequential ID allocator.
-- Derive an independent morphology PRNG from the world seed, crop ID, and a fixed domain tag, so crop geometry changes cannot affect placement jitter.
-- Register built-in `fixed` and `generic` crop generators. Generators remain transient and are excluded from snapshots.
+- Compose `FieldSetGenerator -> FieldGenerator -> RowGenerator -> CropGenerator` through typed factories in `GeneratorRegistry`.
+- Field sets return ordered field polygons, fields return ordered clipped row segments, rows return ordered crop positions, and crop generators return leaf geometry.
+- Fields, roads, rows, generation keys, and generator state remain transient; only crops enter `World`, its spatial index, and snapshots.
+- Retain sequential entity IDs. Give new hierarchy nodes domain-separated random streams keyed by top-level generator, layout attempt, field, row, and crop indices.
+- Seed hierarchical crop morphology from its stable transient generation key. Keep the legacy grid's existing global placement stream and ID-seeded morphology unchanged.
+- Use Boost.Geometry internally for polygon validation, intersection, inset, and convex hull operations without exposing Boost types in the public API.
 
 YAML and compatibility:
-- Compose placement and crop generation with a nested `crop` mapping under each grid generator.
-- Scale and leaf parameters accept distributions; scale is sampled once per crop. Scalar distribution values are fixed. Missing mapping members use documented defaults, and omitted `stddev` defaults to `(max - min) / 6`.
-- Preserve grid-level `radius` and `leaves` as shorthand for the fixed crop generator, but reject nested crop geometry combined with either shorthand.
-- Keep explicit low-level crops supported and do not change snapshot v3. Legacy grid YAML must remain byte-identical.
-- Generate generic leaves in index order with the leaf-length major axis (`radius_x`) pointing radially along `theta`, and the leaf-width minor axis (`radius_y`) perpendicular to it.
-- Use bounded truncated-Gaussian rejection sampling with SplitMix and Box-Muller, failing after 10,000 rejected samples.
-- Validate finite ordered ranges, means within bounds, standard deviations, positive scale/length/width/count, and non-negative minimum radial placement.
-- Update the README and the ten-crop viewer example to demonstrate grid/generic composition.
+- Add top-level `gentype: field_set` with required `bounds` and positive `count`, and nested `field`, `row`, and `crop` mappings with explicit `gentype` values.
+- Accept a simple concave outer polygon without holes. Generate exactly N surviving single-polygon fields or fail after 128 deterministic layout attempts.
+- Default to metric parameters: road width 3.0 m, row spacing 0.75 m, crop spacing 0.25 m, headland 0.5 m, seed jitter 0.8, and zero row/crop jitter.
+- Form roads by moving true Voronoi edges inward by half the road width while leaving the outer domain boundary unchanged. Retain the largest valid component for each seed.
+- Determine row orientation from the field's minimum-area oriented bounding box unless explicitly overridden. Apply the configured headland, clip parallel rows, and place crops with equal end margins.
+- Preserve existing explicit crops, all grid YAML forms, generic crop distributions, snapshot v3, and byte-identical legacy grid output.
 
 Acceptance criteria:
-- Generic crops regenerate deterministically with exact leaf ordering.
-- Swapping fixed, generic, or injected crop generators does not alter positions, jitter, or IDs.
-- Split and combined grids preserve current deterministic placement behavior.
-- A test-only crop generator plugs into the grid without changing grid or world-building control flow.
-- Tests cover default, structured, and scalar parameters; generated bounds; geometry formulas; independent random streams; registration and dispatch; legacy snapshot identity; and invalid configurations.
-- Missing or unknown crop generators, ambiguous geometry, invalid distributions, and exhausted sampling are rejected.
-- The library, viewer and shaders, complete test suite, and benchmark target build successfully.
+- Field sets deterministically generate exact seeds, field polygons, rows, crop positions, leaf geometry, ordering, and sequential IDs.
+- Internal road gaps have the requested width, domain edges are unchanged, concave clipping and largest-component selection are deterministic, and invalid layouts exhaust cleanly.
+- Auto and overridden orientation, headlands, equal margins, split row segments, bounded jitter, and crop-center containment are tested.
+- Test-only field-set, field, row, and crop generators plug in without edits to world-building or hierarchy orchestration.
+- Changing descendants or sibling draw counts does not perturb unrelated hierarchical placement or morphology streams.
+- Invalid polygons, holes, non-finite values, invalid counts and dimensions, overflow, excessive offsets, empty fields/rows, missing or unknown generators, and rejection exhaustion are rejected.
+- Existing grid snapshot fixtures remain byte-identical and snapshot v3 is unchanged.
+- Reporting benchmarks cover 10, 100, and 500 fields plus large crop counts without wall-clock correctness thresholds.
+- The library, viewer and shaders, complete test suite, and benchmark target build successfully through CMake and the Nix flake.

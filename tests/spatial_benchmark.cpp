@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
+#include <string>
 #include <vector>
 
 namespace {
@@ -51,11 +53,41 @@ void run_case(const std::size_t count) {
               << " index_bytes=" << index.allocated_bytes() << '\n';
 }
 
+void run_field_case(const std::size_t count) {
+    const auto side = std::sqrt(static_cast<double>(count)) * 20.0;
+    std::ostringstream description;
+    description << "seed: 1234\ngenerators:\n"
+                << "  - gentype: field_set\n"
+                << "    bounds: [[0, 0], [" << side << ", 0], [" << side << ", "
+                << side << "], [0, " << side << "]]\n"
+                << "    count: " << count << "\n"
+                << "    road_width: 1\n"
+                << "    field:\n"
+                << "      gentype: parallel_rows\n"
+                << "      row_spacing: 4\n"
+                << "      headland: 0\n"
+                << "      row:\n"
+                << "        gentype: linear\n"
+                << "        crop_spacing: 2\n"
+                << "        crop: {gentype: fixed, radius: 0.1}\n";
+    const auto start = Clock::now();
+    const auto world = cropsim::world_from_yaml(description.str());
+    const auto end = Clock::now();
+    std::cout << std::fixed << std::setprecision(2) << "fields=" << count
+              << " crops=" << world.size()
+              << " hierarchy_ms="
+              << std::chrono::duration<double, std::milli>(end - start).count()
+              << '\n';
+}
+
 }  // namespace
 
 int main() {
     for (const auto count : {std::size_t{50}, std::size_t{1'000}, std::size_t{1'000'000},
                              std::size_t{10'000'000}}) {
         run_case(count);
+    }
+    for (const auto count : {std::size_t{10}, std::size_t{100}, std::size_t{500}}) {
+        run_field_case(count);
     }
 }

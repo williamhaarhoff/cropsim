@@ -19,8 +19,10 @@ double coordinate(const YAML::Node &node, std::size_t index,
 } // namespace
 
 void GridGenerator::generate(const YAML::Node &node, GenerationContext &context,
-                             const CropGeneratorFactory &crop_generators,
+                             const GenerationKey key,
+                             const GeneratorRegistry &registry,
                              std::vector<Crop> &destination) const {
+  static_cast<void>(key);
   const auto rows = node["rows"].as<std::size_t>();
   const auto columns = node["columns"].as<std::size_t>();
   const auto origin_x = coordinate(node["origin"], 0U, "origin");
@@ -58,7 +60,7 @@ void GridGenerator::generate(const YAML::Node &node, GenerationContext &context,
   const auto type =
       crop_node ? type_node.as<std::string>() : std::string("fixed");
   const auto &geometry = crop_node ? crop_node : node;
-  const auto crop_generator = crop_generators.create(type);
+  const auto crop_generator = registry.crops().create(type);
 
   destination.reserve(destination.size() + count);
   for (std::size_t row = 0; row < rows; ++row) {

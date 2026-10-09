@@ -84,6 +84,50 @@ remain shorthand for `crop: {gentype: fixed, ...}`. Nested and legacy geometry c
 Generic leaves use their length as the local x/major radius, rotated along their radial angle;
 their width is the perpendicular local y/minor radius.
 
+## Hierarchical field generation
+
+Field sets, fields, and rows are transient generators: they deterministically place crops but
+are not stored in the immutable world or its snapshots. Coordinates are metres and angles are
+radians. A field set accepts one simple outer polygon, creates an exact number of jittered-lattice
+Voronoi fields, leaves fixed-width road gaps between them, fills each field with parallel rows,
+and fills each row with crops:
+
+```yaml
+seed: 568616
+generators:
+  - gentype: field_set
+    bounds: [[0, 0], [100, 0], [100, 80], [0, 80]]
+    count: 12
+    road_width: 3.0
+    seed_jitter: 0.8
+    minimum_field_area: 0.0
+    minimum_field_width: 0.0
+    field:
+      gentype: parallel_rows
+      orientation: auto
+      orientation_offset: 0.0
+      row_spacing: 0.75
+      row_jitter: 0.0
+      headland: 0.5
+      row:
+        gentype: linear
+        crop_spacing: 0.25
+        along_jitter: 0.0
+        cross_jitter: 0.0
+        crop:
+          gentype: generic
+```
+
+`bounds` and a positive `count` are required, as are the nested `field`, `row`, and `crop`
+generator mappings. The other values above show their defaults. `orientation` defaults to the
+long axis of the field's minimum-area oriented bounding box and may instead be an explicit angle.
+The outer polygon may be concave but cannot contain holes or self-intersections. Crop centers are
+kept inside the headland-adjusted field; leaf geometry may extend beyond it.
+
+The field hierarchy uses stable, domain-separated random streams. Changing crop geometry or the
+number of crops in one row does not change the field and row layouts of its siblings. World crop
+IDs remain sequential in canonical field, row, segment, and crop order.
+
 World snapshots use a versioned, little-endian binary representation. The built-in headless
 renderer orthographically projects all leaves and produces their binary occupancy union as
 in-memory 8-bit grayscale images and portable PGM files.

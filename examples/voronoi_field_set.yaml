@@ -1,0 +1,21 @@
+seed: 568616
+generators:
+  - gentype: field_set
+    bounds: [[0, 0], [24, 0], [24, 18], [15, 18], [15, 14], [9, 14], [9, 18], [0, 18]]
+    count: 6
+    road_width: 1.2
+    seed_jitter: 0.75
+    field:
+      gentype: parallel_rows
+      row_spacing: 0.8
+      row_jitter: 0.05
+      headland: 0.4
+      row:
+        gentype: linear
+        crop_spacing: 0.3
+        along_jitter: 0.03
+        cross_jitter: 0.02
+        crop:
+          gentype: generic
+          scale: {mean: 0.07, min: 0.05, max: 0.09}
+          leaf_num: {mean: 5, min: 3, max: 8}
