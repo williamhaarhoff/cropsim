@@ -49,6 +49,34 @@ generators:
       - {position: [-0.1, 0.0], radii: [0.12, 0.04], rotation: -0.5}
 ```
 
+Placement and crop morphology can also be composed. The `grid` generator owns positions and
+jitter while its nested crop generator independently creates geometry from a per-crop stream:
+
+```yaml
+seed: 568616
+generators:
+  - gentype: grid
+    origin: [0.0, 0.0]
+    rows: 2
+    columns: 5
+    spacing: [0.2, 0.2]
+    jitter: 0.01
+    crop:
+      gentype: generic
+      scale: 0.05
+      leaf_num: {mean: 4, min: 1, max: 10, stddev: 1.5}
+      leaf_length: {mean: 1.0, min: 0.8, max: 1.2}
+      leaf_width: {mean: 0.4, min: 0.2, max: 0.6}
+      leaf_offset: {mean: 0.0, min: -0.05, max: 0.05}
+      leaf_orientation: {mean: 0.0, min: -0.5, max: 0.5}
+```
+
+Each distribution may instead be a scalar for an exact value. Missing members use the defaults
+shown above, and a missing `stddev` is `(max - min) / 6`. Legacy grid-level `radius` and `leaves`
+remain shorthand for `crop: {gentype: fixed, ...}`. Nested and legacy geometry cannot be mixed.
+Generic leaves use their length as the local x/major radius, rotated along their radial angle;
+their width is the perpendicular local y/minor radius.
+
 World snapshots use a versioned, little-endian binary representation. The built-in headless
 renderer orthographically projects all leaves and produces their binary occupancy union as
 in-memory 8-bit grayscale images and portable PGM files.

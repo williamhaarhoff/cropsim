@@ -4,10 +4,11 @@
 
 namespace cropsim::generators {
 
-class GridGenerator final : public Generator {
+class GridGenerator final : public PlacementGenerator {
 public:
-    void generate(const YAML::Node& node, GenerationContext& context,
-                  std::vector<Crop>& destination) const override;
+  void generate(const YAML::Node &node, GenerationContext &context,
+                const CropGeneratorFactory &crop_generators,
+                std::vector<Crop> &destination) const override;
 };
 
-}  // namespace cropsim::generators
+} // namespace cropsim::generators

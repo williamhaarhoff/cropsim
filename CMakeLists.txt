@@ -11,6 +11,8 @@ find_package(yaml-cpp REQUIRED)
 add_library(cropsim
     src/generators/generation_context.cpp
     src/generators/generator_factory.cpp
+    src/generators/fixed_crop_generator.cpp
+    src/generators/generic_crop_generator.cpp
     src/generators/grid_generator.cpp
     src/image_assertion.cpp
     src/renderer.cpp

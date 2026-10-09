@@ -6,8 +6,8 @@ seed: 20261009
 generators:
   - gentype: grid
     origin: [0.0, 0.0]
-    rows: 2
-    columns: 5
+    rows: 1000
+    columns: 1000
     spacing: [2.5, 2.5]
     jitter: 0.0
     crop:

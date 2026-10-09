@@ -168,16 +168,31 @@ Use SDL Render/Graphics stack. CPU rendering is deterministic and is the source 
 # Current milestone
 
 Goal:
-Add deterministic multi-leaf crops built from oriented ellipses and rendered with an orthographic projection. The canonical CPU renderer is a flat occupancy renderer: each sample reports whether any leaf covers that world coordinate. Overlapping leaves form a binary union; color, shading, lighting, and overlap count do not affect ground-truth output.
+Separate crop placement from crop geometry generation. Placement generators decide where crops exist; crop generators independently create their immutable, ordered leaf geometry. Implement a deterministic generic rosette crop generator.
 
-Each crop contains an immutable, deterministically ordered collection of ellipse leaves. Every leaf has a position relative to the crop, two radii, and a rotation. Support constructing this geometry from YAML and generators, preserve it through versioned snapshot round-trips, and derive each crop's spatial bounds from its complete leaf set.
+Architecture:
+- Replace the generic generator API with typed `PlacementGenerator`, `CropGenerator`, and corresponding factories collected in a `GeneratorRegistry`.
+- Placement generators receive the crop-generator factory and invoke the selected crop generator once per crop.
+- Crop generators return `std::vector<EllipseLeaf>` and do not assign world positions or entity IDs.
+- Retain the global placement PRNG and sequential ID allocator.
+- Derive an independent morphology PRNG from the world seed, crop ID, and a fixed domain tag, so crop geometry changes cannot affect placement jitter.
+- Register built-in `fixed` and `generic` crop generators. Generators remain transient and are excluded from snapshots.
 
-Keep the GPU viewer approximate and render multi-leaf crops efficiently with instanced analytic ellipses. Provide a toggle between the canonical single-color occupancy view and deterministic per-leaf diagnostic colors for inspecting individual leaves and overlaps. Diagnostic colors are viewer-only, are derived rather than stored as semantic world data, and do not alter world state or canonical rendering.
+YAML and compatibility:
+- Compose placement and crop generation with a nested `crop` mapping under each grid generator.
+- Scalar distribution values are fixed. Missing mapping members use documented defaults, and omitted `stddev` defaults to `(max - min) / 6`.
+- Preserve grid-level `radius` and `leaves` as shorthand for the fixed crop generator, but reject nested crop geometry combined with either shorthand.
+- Keep explicit low-level crops supported and do not change snapshot v3. Legacy grid YAML must remain byte-identical.
+- Generate generic leaves in index order with the leaf-length major axis (`radius_x`) pointing radially along `theta`, and the leaf-width minor axis (`radius_y`) perpendicular to it.
+- Use bounded truncated-Gaussian rejection sampling with SplitMix and Box-Muller, failing after 10,000 rejected samples.
+- Validate finite ordered ranges, means within bounds, standard deviations, positive scale/length/width/count, and non-negative minimum radial placement.
+- Update the README and the ten-crop viewer example to demonstrate grid/generic composition.
 
 Acceptance criteria:
-- Explicit and generated multi-leaf crops regenerate deterministically.
-- Snapshot round-trips preserve exact leaf geometry and ordering.
-- CPU rendering produces the binary union of orthographically projected ellipses.
-- Spatial queries include every crop whose leaf geometry intersects the query.
-- The viewer renders multi-leaf crops efficiently with instanced analytic ellipses and supports the diagnostic color toggle.
-- Tests cover ellipse transforms, overlap union behavior, deterministic generation, snapshot compatibility, spatial extents, and viewer mode selection.
+- Generic crops regenerate deterministically with exact leaf ordering.
+- Swapping fixed, generic, or injected crop generators does not alter positions, jitter, or IDs.
+- Split and combined grids preserve current deterministic placement behavior.
+- A test-only crop generator plugs into the grid without changing grid or world-building control flow.
+- Tests cover default, structured, and scalar parameters; generated bounds; geometry formulas; independent random streams; registration and dispatch; legacy snapshot identity; and invalid configurations.
+- Missing or unknown crop generators, ambiguous geometry, invalid distributions, and exhausted sampling are rejected.
+- The library, viewer and shaders, complete test suite, and benchmark target build successfully.

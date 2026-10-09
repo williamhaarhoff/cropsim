@@ -10,11 +10,21 @@ class Node;
 
 namespace cropsim::generators {
 
-class Generator {
+class CropGeneratorFactory;
+
+class PlacementGenerator {
 public:
-    virtual ~Generator() = default;
-    virtual void generate(const YAML::Node& node, GenerationContext& context,
-                          std::vector<Crop>& destination) const = 0;
+  virtual ~PlacementGenerator() = default;
+  virtual void generate(const YAML::Node &node, GenerationContext &context,
+                        const CropGeneratorFactory &crop_generators,
+                        std::vector<Crop> &destination) const = 0;
 };
 
-}  // namespace cropsim::generators
+class CropGenerator {
+public:
+  virtual ~CropGenerator() = default;
+  [[nodiscard]] virtual std::vector<EllipseLeaf>
+  generate(const YAML::Node &node, MorphologyContext &context) const = 0;
+};
+
+} // namespace cropsim::generators
