@@ -26,7 +26,7 @@ Distribution distribution(const YAML::Node &parent, const char *name,
   const auto node = parent[name];
   if (!node) {
     return {default_mean, default_minimum, default_maximum,
-            default_standard_deviation, false};
+            default_standard_deviation, default_minimum == default_maximum};
   }
   if (node.IsScalar()) {
     const auto value = node.as<double>();
@@ -73,7 +73,6 @@ double sample(const Distribution &value, MorphologyContext &context) {
 std::vector<EllipseLeaf>
 GenericCropGenerator::generate(const YAML::Node &node,
                                MorphologyContext &context) const {
-  const auto scale = node["scale"] ? node["scale"].as<double>() : 0.05;
   const auto count_dist = distribution(node, "leaf_num", 4.0, 1.0, 10.0, 1.5);
   const auto length_dist =
       distribution(node, "leaf_length", 1.0, 0.8, 1.2, 0.0666667);
@@ -83,11 +82,13 @@ GenericCropGenerator::generate(const YAML::Node &node,
       distribution(node, "leaf_offset", 0.0, -0.05, 0.05, 0.0166667);
   const auto orientation_dist =
       distribution(node, "leaf_orientation", 0.0, -0.5, 0.5, 0.1666667);
-  if (!std::isfinite(scale) || scale <= 0.0 || count_dist.minimum < 1.0 ||
+  const auto scale_dist = distribution(node, "scale", 0.05, 0.05, 0.05, 0.0);
+  if (scale_dist.minimum <= 0.0 || count_dist.minimum < 1.0 ||
       length_dist.minimum <= 0.0 || width_dist.minimum <= 0.0 ||
       length_dist.minimum + offset_dist.minimum < 0.0) {
     throw std::invalid_argument("invalid generic crop parameters");
   }
+
   const auto sampled_count = sample(count_dist, context);
   if (sampled_count >
       static_cast<double>(std::numeric_limits<std::size_t>::max())) {
@@ -97,6 +98,7 @@ GenericCropGenerator::generate(const YAML::Node &node,
   if (leaf_count == 0U) {
     throw std::invalid_argument("generic crop leaf count must be positive");
   }
+  const auto scale = sample(scale_dist, context);
   std::vector<EllipseLeaf> leaves;
   if (leaf_count > leaves.max_size()) {
     throw std::overflow_error("generic crop leaf count overflow");

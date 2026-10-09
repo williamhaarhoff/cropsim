@@ -180,7 +180,7 @@ Architecture:
 
 YAML and compatibility:
 - Compose placement and crop generation with a nested `crop` mapping under each grid generator.
-- Scalar distribution values are fixed. Missing mapping members use documented defaults, and omitted `stddev` defaults to `(max - min) / 6`.
+- Scale and leaf parameters accept distributions; scale is sampled once per crop. Scalar distribution values are fixed. Missing mapping members use documented defaults, and omitted `stddev` defaults to `(max - min) / 6`.
 - Preserve grid-level `radius` and `leaves` as shorthand for the fixed crop generator, but reject nested crop geometry combined with either shorthand.
 - Keep explicit low-level crops supported and do not change snapshot v3. Legacy grid YAML must remain byte-identical.
 - Generate generic leaves in index order with the leaf-length major axis (`radius_x`) pointing radially along `theta`, and the leaf-width minor axis (`radius_y`) perpendicular to it.

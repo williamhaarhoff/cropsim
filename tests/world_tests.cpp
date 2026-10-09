@@ -289,6 +289,39 @@ generators:
   CHECK(leaves[3].y == doctest::Approx(-8.0));
 }
 
+TEST_CASE("generic scale distribution varies crops rather than leaves") {
+  const auto world = cropsim::world_from_yaml(R"(
+seed: 701
+generators:
+  - gentype: grid
+    origin: [0, 0]
+    rows: 1
+    columns: 6
+    spacing: [3, 1]
+    crop:
+      gentype: generic
+      scale: {mean: 0.5, min: 0.1, max: 1.0}
+      leaf_num: 4
+      leaf_length: 1
+      leaf_width: 0.25
+      leaf_offset: 0
+      leaf_orientation: 0
+)");
+  REQUIRE(world.size() == 6U);
+  for (const auto &crop : world.crops()) {
+    REQUIRE(crop.leaves.size() == 4U);
+    const auto crop_scale = crop.leaves.front().radius_x;
+    CHECK(crop_scale >= 0.1);
+    CHECK(crop_scale <= 1.0);
+    for (const auto &leaf : crop.leaves) {
+      CHECK(leaf.radius_x == crop_scale);
+      CHECK(leaf.radius_y == doctest::Approx(crop_scale * 0.25));
+    }
+  }
+  CHECK(world.crops()[0].leaves.front().radius_x !=
+        world.crops()[1].leaves.front().radius_x);
+}
+
 TEST_CASE("crop generator choice cannot alter placement jitter or IDs") {
   constexpr std::string_view fixed = R"(
 seed: 123
