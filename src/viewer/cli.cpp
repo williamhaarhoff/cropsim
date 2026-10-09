@@ -1,12 +1,12 @@
 #include "cli.hpp"
 
-#include "cropsim/snapshot.hpp"
-
 #include <fstream>
 #include <iterator>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+
+#include "cropsim/snapshot.hpp"
 
 namespace cropsim::viewer {
 
@@ -23,6 +23,10 @@ Options parse_options(const int argc, const char* const* argv) {
             options.smoke_test = true;
             continue;
         }
+        if (argument == "--diagnostic-colors") {
+            options.view_mode = ViewMode::diagnostic_leaves;
+            continue;
+        }
         if (has_input) {
             throw std::invalid_argument("exactly one world input must be specified");
         }
@@ -36,8 +40,9 @@ Options parse_options(const int argc, const char* const* argv) {
             options.input_kind = InputKind::automatic;
             options.input_path = argument;
         } else {
-            throw std::invalid_argument(
-                "usage: cropsim_viewer <path> [--check|--smoke] (or --yaml/--snapshot <path>)");
+            throw std::invalid_argument("usage: cropsim_viewer <path> "
+                                        "[--check|--smoke] [--diagnostic-colors] "
+                                        "(or --yaml/--snapshot <path>)");
         }
         has_input = true;
     }
@@ -61,8 +66,7 @@ World load_world(const Options& options) {
     const std::string description{std::istreambuf_iterator<char>(stream),
                                   std::istreambuf_iterator<char>()};
     constexpr std::string_view snapshot_magic{"CROPSIM\0", 8U};
-    if (options.input_kind == InputKind::automatic &&
-        description.size() >= snapshot_magic.size() &&
+    if (options.input_kind == InputKind::automatic && description.size() >= snapshot_magic.size() &&
         std::string_view(description).substr(0U, snapshot_magic.size()) == snapshot_magic) {
         return load_snapshot(options.input_path);
     }
@@ -77,4 +81,4 @@ World load_world(const Options& options) {
     }
 }
 
-}  // namespace cropsim::viewer
+} // namespace cropsim::viewer

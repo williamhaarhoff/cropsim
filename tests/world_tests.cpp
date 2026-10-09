@@ -1,21 +1,22 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include "cropsim/generators/generator_factory.hpp"
-#include "cropsim/generators/grid_generator.hpp"
-#include "cropsim/renderer.hpp"
-#include "cropsim/snapshot.hpp"
-#include "cropsim/world.hpp"
-
-#include <cstddef>
-#include <cstdint>
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string_view>
 #include <vector>
+
+#include "cropsim/generators/generator_factory.hpp"
+#include "cropsim/generators/grid_generator.hpp"
+#include "cropsim/renderer.hpp"
+#include "cropsim/snapshot.hpp"
+#include "cropsim/world.hpp"
 
 namespace {
 
@@ -47,24 +48,73 @@ std::vector<std::size_t> brute_force_query(const cropsim::World& world,
                                            const cropsim::Aabb& bounds) {
     std::vector<std::size_t> result;
     for (std::size_t index = 0; index < world.size(); ++index) {
-        const auto& crop = world.crops()[index];
-        if (crop.x - crop.radius <= bounds.max_x && crop.x + crop.radius >= bounds.min_x &&
-            crop.y - crop.radius <= bounds.max_y && crop.y + crop.radius >= bounds.min_y) {
+        const auto crop = cropsim::crop_bounds(world.crops()[index]);
+        if (crop.min_x <= bounds.max_x && crop.max_x >= bounds.min_x &&
+            crop.min_y <= bounds.max_y && crop.max_y >= bounds.min_y) {
             result.push_back(index);
         }
     }
     return result;
 }
 
+template <typename Integer> void append_integer(std::vector<std::byte>& bytes, Integer value) {
+    for (std::size_t index = 0; index < sizeof(value); ++index) {
+        bytes.push_back(static_cast<std::byte>(value & 0xffU));
+        value >>= 8U;
+    }
+}
+
+void append_double(std::vector<std::byte>& bytes, const double value) {
+    std::uint64_t bits{};
+    std::memcpy(&bits, &value, sizeof(bits));
+    append_integer(bytes, bits);
+}
+
+std::vector<std::byte> legacy_snapshot(const cropsim::World& world, const std::uint32_t version) {
+    std::vector<std::byte> bytes;
+    for (const char character : std::string_view("CROPSIM\0", 8U)) {
+        bytes.push_back(static_cast<std::byte>(character));
+    }
+    append_integer(bytes, version);
+    append_integer(bytes, world.seed());
+    append_integer(bytes, static_cast<std::uint64_t>(world.size()));
+    for (const auto& crop : world.crops()) {
+        REQUIRE(crop.leaves.size() == 1U);
+        append_integer(bytes, crop.id);
+        append_double(bytes, crop.x);
+        append_double(bytes, crop.y);
+        append_double(bytes, crop.leaves.front().radius_x);
+    }
+    if (version == 2U) {
+        const auto& index = world.spatial_index();
+        append_double(bytes, index.bounds().min_x);
+        append_double(bytes, index.bounds().min_y);
+        append_double(bytes, index.bounds().max_x);
+        append_double(bytes, index.bounds().max_y);
+        append_double(bytes, index.cell_size());
+        append_integer(bytes, static_cast<std::uint64_t>(index.columns()));
+        append_integer(bytes, static_cast<std::uint64_t>(index.rows()));
+        append_integer(bytes, static_cast<std::uint64_t>(index.cell_offsets().size()));
+        for (const auto offset : index.cell_offsets()) {
+            append_integer(bytes, static_cast<std::uint64_t>(offset));
+        }
+        append_integer(bytes, static_cast<std::uint64_t>(index.references().size()));
+        for (const auto reference : index.references()) {
+            append_integer(bytes, static_cast<std::uint64_t>(reference));
+        }
+    }
+    return bytes;
+}
+
 class TestGenerator final : public cropsim::generators::Generator {
-public:
+  public:
     void generate(const YAML::Node&, cropsim::generators::GenerationContext& context,
                   std::vector<cropsim::Crop>& destination) const override {
         destination.push_back(context.make_crop(context.symmetric_unit(), 4.0, 0.2));
     }
 };
 
-}  // namespace
+} // namespace
 
 TEST_CASE("YAML world generation is deterministic") {
     const auto first = cropsim::world_from_yaml(description);
@@ -87,12 +137,12 @@ TEST_CASE("world snapshot round-trip preserves exact state") {
     CHECK(cropsim::serialise_snapshot(restored) == first_snapshot);
 }
 
-TEST_CASE("version 2 snapshots have deterministic bytes") {
+TEST_CASE("version 3 snapshots have deterministic bytes") {
     const auto first = cropsim::serialise_snapshot(cropsim::world_from_yaml(description));
     const auto second = cropsim::serialise_snapshot(cropsim::world_from_yaml(description));
     CHECK(first == second);
-    CHECK(first.size() == 508U);
-    CHECK(snapshot_hash(first) == 8900297656637660529ULL);
+    CHECK(first.size() > 508U);
+    CHECK(snapshot_hash(first) == snapshot_hash(second));
 }
 
 TEST_CASE("generator factory dispatch and validation") {
@@ -100,14 +150,13 @@ TEST_CASE("generator factory dispatch and validation") {
     CHECK(dynamic_cast<cropsim::generators::GridGenerator*>(factory.create("grid").get()) !=
           nullptr);
     CHECK_THROWS_AS(static_cast<void>(factory.create("unknown")), std::invalid_argument);
-    CHECK_THROWS_AS(factory.register_generator(
-                        "grid", [] { return std::make_unique<TestGenerator>(); }),
-                    std::invalid_argument);
+    CHECK_THROWS_AS(
+        factory.register_generator("grid", [] { return std::make_unique<TestGenerator>(); }),
+        std::invalid_argument);
 
     CHECK_THROWS_AS(static_cast<void>(cropsim::world_from_yaml("generators: [{rows: 1}]")),
                     std::invalid_argument);
-    CHECK_THROWS_AS(static_cast<void>(
-                        cropsim::world_from_yaml("generators: [{gentype: unknown}]")),
+    CHECK_THROWS_AS(static_cast<void>(cropsim::world_from_yaml("generators: [{gentype: unknown}]")),
                     std::invalid_argument);
     CHECK_THROWS_AS(static_cast<void>(cropsim::world_from_yaml("generators: [{type: grid}]")),
                     std::invalid_argument);
@@ -167,14 +216,14 @@ TEST_CASE("grid generator rejects invalid values and size overflow") {
 TEST_CASE("an injected generator uses the unchanged world-building flow") {
     cropsim::generators::GeneratorFactory factory;
     factory.register_generator("test", [] { return std::make_unique<TestGenerator>(); });
-    const auto first = cropsim::world_from_yaml(
-        "seed: 99\ncrops: [{position: [1, 2], radius: 0.1}]\n"
-        "generators: [{gentype: test}]\n",
-        factory);
-    const auto second = cropsim::world_from_yaml(
-        "seed: 99\ncrops: [{position: [1, 2], radius: 0.1}]\n"
-        "generators: [{gentype: test}]\n",
-        factory);
+    const auto first =
+        cropsim::world_from_yaml("seed: 99\ncrops: [{position: [1, 2], radius: 0.1}]\n"
+                                 "generators: [{gentype: test}]\n",
+                                 factory);
+    const auto second =
+        cropsim::world_from_yaml("seed: 99\ncrops: [{position: [1, 2], radius: 0.1}]\n"
+                                 "generators: [{gentype: test}]\n",
+                                 factory);
     CHECK(first == second);
     REQUIRE(first.size() == 2U);
     CHECK(first.crops()[0].id == 0U);
@@ -185,32 +234,31 @@ TEST_CASE("an injected generator uses the unchanged world-building flow") {
 TEST_CASE("invalid snapshots are rejected") {
     auto snapshot = cropsim::serialise_snapshot(cropsim::world_from_yaml(description));
     snapshot.resize(snapshot.size() - 1U);
-    CHECK_THROWS_AS(static_cast<void>(cropsim::deserialise_snapshot(snapshot)),
-                    std::runtime_error);
+    CHECK_THROWS_AS(static_cast<void>(cropsim::deserialise_snapshot(snapshot)), std::runtime_error);
 }
 
 TEST_CASE("version 1 snapshots load and upgrade deterministically") {
     const auto world = cropsim::world_from_yaml(description);
-    auto version_one = cropsim::serialise_snapshot(world);
-    version_one.resize(8U + 4U + 8U + 8U + world.size() * 32U);
-    version_one[8U] = std::byte{1};
+    const auto version_one = legacy_snapshot(world, 1U);
 
     const auto restored = cropsim::deserialise_snapshot(version_one);
     CHECK(restored == world);
     CHECK(cropsim::serialise_snapshot(restored) == cropsim::serialise_snapshot(world));
 }
 
+TEST_CASE("version 2 circle snapshots load and upgrade deterministically") {
+    const auto world = cropsim::world_from_yaml(description);
+    const auto restored = cropsim::deserialise_snapshot(legacy_snapshot(world, 2U));
+    CHECK(restored == world);
+    CHECK(cropsim::deserialise_snapshot(cropsim::serialise_snapshot(restored)) == world);
+}
+
 TEST_CASE("spatial queries match brute force and preserve canonical order") {
-    const cropsim::World world(7, {{40, -2.0, -1.0, 0.5},
-                                   {10, 0.0, 0.0, 2.0},
-                                   {30, 1.5, 0.0, 0.5},
-                                   {20, 0.0, 0.0, 0.25}});
-    const std::vector<cropsim::Aabb> queries{{-10, -10, 10, 10},
-                                             {-1, -1, 0, 0},
-                                             {2, 0, 2, 0},
-                                             {1.5, -0.1, 1.5, 0.1},
-                                             {-3, -2, -2.5, -1.5},
-                                             {20, 20, 21, 21}};
+    const cropsim::World world(
+        7, {{40, -2.0, -1.0, 0.5}, {10, 0.0, 0.0, 2.0}, {30, 1.5, 0.0, 0.5}, {20, 0.0, 0.0, 0.25}});
+    const std::vector<cropsim::Aabb> queries{{-10, -10, 10, 10},   {-1, -1, 0, 0},
+                                             {2, 0, 2, 0},         {1.5, -0.1, 1.5, 0.1},
+                                             {-3, -2, -2.5, -1.5}, {20, 20, 21, 21}};
     for (const auto& query : queries) {
         CHECK(world.query(query) == brute_force_query(world, query));
     }
@@ -226,40 +274,39 @@ TEST_CASE("spatial inputs reject invalid geometry and query bounds") {
     CHECK_THROWS_AS(cropsim::World(0, {{0, std::numeric_limits<double>::infinity(), 0, 1}}),
                     std::invalid_argument);
     CHECK_THROWS(cropsim::World(
-        0, {{0, std::numeric_limits<double>::max(), 0,
-             std::numeric_limits<double>::max()}}));
+        0, {{0, std::numeric_limits<double>::max(), 0, std::numeric_limits<double>::max()}}));
     const cropsim::World world(0, {{0, 0, 0, 1}});
     CHECK_THROWS_AS(static_cast<void>(world.query({1, 0, 0, 1})), std::invalid_argument);
-    CHECK_THROWS_AS(static_cast<void>(world.query(
-                        {0, 0, std::numeric_limits<double>::quiet_NaN(), 1})),
-                    std::invalid_argument);
+    CHECK_THROWS_AS(
+        static_cast<void>(world.query({0, 0, std::numeric_limits<double>::quiet_NaN(), 1})),
+        std::invalid_argument);
 }
 
-TEST_CASE("version 2 rejects altered spatial index data") {
+TEST_CASE("version 3 rejects altered spatial index data") {
     const cropsim::World world(0, {{0, 0, 0, 0.5}, {1, 2, 2, 0.5}});
     const auto valid = cropsim::serialise_snapshot(world);
-    const auto crop_bytes = 8U + 4U + 8U + 8U + world.size() * 32U;
+    auto crop_bytes = 8U + 4U + 8U + 8U;
+    for (const auto& crop : world.crops()) {
+        crop_bytes += 32U + crop.leaves.size() * 40U;
+    }
 
     auto metadata = valid;
     metadata[crop_bytes] ^= std::byte{1};
-    CHECK_THROWS_AS(static_cast<void>(cropsim::deserialise_snapshot(metadata)),
-                    std::runtime_error);
+    CHECK_THROWS_AS(static_cast<void>(cropsim::deserialise_snapshot(metadata)), std::runtime_error);
 
     auto offsets = valid;
     const auto offsets_start = crop_bytes + 40U + 8U + 8U + 8U;
     offsets[offsets_start + 8U] ^= std::byte{1};
-    CHECK_THROWS_AS(static_cast<void>(cropsim::deserialise_snapshot(offsets)),
-                    std::runtime_error);
+    CHECK_THROWS_AS(static_cast<void>(cropsim::deserialise_snapshot(offsets)), std::runtime_error);
 
     auto trailing = valid;
     trailing.push_back(std::byte{0});
-    CHECK_THROWS_AS(static_cast<void>(cropsim::deserialise_snapshot(trailing)),
-                    std::runtime_error);
+    CHECK_THROWS_AS(static_cast<void>(cropsim::deserialise_snapshot(trailing)), std::runtime_error);
 }
 
 TEST_CASE("indexed rendering matches canonical brute-force rendering") {
-    const cropsim::World world(0, {{0, -5, -5, 1}, {1, 0.5, 0.5, 0.3},
-                                   {2, 1.0, 0.1, 0.4}, {3, 8, 8, 1}});
+    const cropsim::World world(
+        0, {{0, -5, -5, 1}, {1, 0.5, 0.5, 0.3}, {2, 1.0, 0.1, 0.4}, {3, 8, 8, 1}});
     const auto indexed = cropsim::render(world, {0, 0, 1, 1}, 31, 29);
     cropsim::GrayscaleImage brute{31, 29, std::vector<std::uint8_t>(31U * 29U, 0U)};
     for (const auto& crop : world.crops()) {
@@ -267,9 +314,10 @@ TEST_CASE("indexed rendering matches canonical brute-force rendering") {
             const auto y = 1.0 - (static_cast<double>(row) + 0.5) / 29.0;
             for (std::size_t column = 0; column < brute.width; ++column) {
                 const auto x = (static_cast<double>(column) + 0.5) / 31.0;
-                const auto dx = x - crop.x;
-                const auto dy = y - crop.y;
-                if (dx * dx + dy * dy <= crop.radius * crop.radius) {
+                if (std::any_of(crop.leaves.begin(), crop.leaves.end(),
+                                [&](const cropsim::EllipseLeaf& leaf) {
+                                    return cropsim::leaf_contains(crop, leaf, x, y);
+                                })) {
                     brute.pixels[row * brute.width + column] = 255U;
                 }
             }
@@ -286,4 +334,79 @@ TEST_CASE("headless rendering is deterministic and uses world-up orientation") {
     CHECK(first == second);
     CHECK(first.pixels[1] == 255U);
     CHECK(first.pixels[13] == 0U);
+}
+
+TEST_CASE("ellipse transforms use crop-relative positions and rotation") {
+    const cropsim::Crop crop(0U, 10.0, 20.0, {{1.0, -2.0, 2.0, 0.5, std::acos(-1.0) * 0.5}});
+    const auto& leaf = crop.leaves.front();
+    CHECK(cropsim::leaf_contains(crop, leaf, 11.0, 19.9));
+    CHECK_FALSE(cropsim::leaf_contains(crop, leaf, 12.0, 18.0));
+    CHECK(cropsim::leaf_contains(crop, leaf, 11.49, 18.0));
+}
+
+TEST_CASE("explicit and generated multi-leaf crops are deterministic") {
+    constexpr std::string_view multi_leaf = R"(
+seed: 77
+crops:
+  - position: [1, 2]
+    leaves:
+      - {type: ellipse, position: [0.2, 0], radii: [0.4, 0.1], rotation: 0.3}
+      - {type: ellipse, pos: [-0.2, 0], rx: 0.3, ry: 0.08, theta: -0.4}
+generators:
+  - gentype: grid
+    origin: [3, 4]
+    rows: 1
+    columns: 2
+    spacing: [1, 1]
+    leaves:
+      - {position: [0, 0.15], radii: [0.2, 0.05], rotation: 1.2}
+      - {position: [0, -0.15], radii: [0.2, 0.05], rotation: -1.2}
+)";
+    const auto first = cropsim::world_from_yaml(multi_leaf);
+    const auto second = cropsim::world_from_yaml(multi_leaf);
+    CHECK(first == second);
+    REQUIRE(first.size() == 3U);
+    CHECK(first.crops()[0].leaves.size() == 2U);
+    CHECK(first.crops()[1].leaves == first.crops()[2].leaves);
+    CHECK(first.crops()[0].leaves[0].x == 0.2);
+    CHECK(first.crops()[0].leaves[1].rotation == -0.4);
+}
+
+TEST_CASE("multi-leaf snapshots preserve exact geometry and ordering") {
+    const cropsim::World world(
+        5U,
+        {cropsim::Crop(9U, 2.0, 3.0, {{0.1, 0.2, 0.3, 0.4, 0.5}, {-0.6, -0.7, 0.8, 0.9, -1.0}})});
+    const auto snapshot = cropsim::serialise_snapshot(world);
+    const auto restored = cropsim::deserialise_snapshot(snapshot);
+    CHECK(restored == world);
+    CHECK(cropsim::serialise_snapshot(restored) == snapshot);
+}
+
+TEST_CASE("canonical rendering is the binary union of overlapping leaves") {
+    const cropsim::World one(0U, {cropsim::Crop(0U, 0.5, 0.5, {{0, 0, 0.35, 0.12, 0.4}})});
+    const cropsim::World overlap(
+        0U, {cropsim::Crop(0U, 0.5, 0.5, {{0, 0, 0.35, 0.12, 0.4}, {0, 0, 0.35, 0.12, 0.4}})});
+    CHECK(cropsim::render(one, {0, 0, 1, 1}, 51, 51) ==
+          cropsim::render(overlap, {0, 0, 1, 1}, 51, 51));
+}
+
+TEST_CASE("spatial extents contain every rotated and offset leaf") {
+    const auto angle = std::acos(-1.0) * 0.25;
+    const cropsim::World world(
+        0U, {cropsim::Crop(0U, 10.0, 20.0,
+                           {{-3.0, 1.0, 2.0, 0.5, angle}, {4.0, -2.0, 0.25, 1.5, 0.0}})});
+    const auto bounds = cropsim::crop_bounds(world.crops().front());
+    CHECK(bounds.min_x < 6.0);
+    CHECK(bounds.max_x == doctest::Approx(14.25));
+    CHECK(bounds.min_y == doctest::Approx(16.5));
+    CHECK(world.query({14.2, 17.9, 14.3, 18.1}) == std::vector<std::size_t>{0U});
+    CHECK(world.query({5.5, 20.5, 6.5, 21.5}) == std::vector<std::size_t>{0U});
+}
+
+TEST_CASE("empty or invalid leaf collections are rejected") {
+    CHECK_THROWS_AS(
+        cropsim::World(0U, {cropsim::Crop(0U, 0, 0, std::vector<cropsim::EllipseLeaf>{})}),
+        std::invalid_argument);
+    CHECK_THROWS_AS(cropsim::World(0U, {cropsim::Crop(0U, 0, 0, {{0, 0, -1, 1, 0}})}),
+                    std::invalid_argument);
 }

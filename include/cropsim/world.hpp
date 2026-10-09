@@ -11,11 +11,25 @@ namespace generators {
 class GeneratorFactory;
 }
 
+struct EllipseLeaf {
+    double x{};
+    double y{};
+    double radius_x{};
+    double radius_y{};
+    double rotation{};
+
+    [[nodiscard]] bool operator==(const EllipseLeaf& other) const noexcept;
+};
+
 struct Crop {
     std::uint64_t id{};
     double x{};
     double y{};
-    double radius{};
+    std::vector<EllipseLeaf> leaves;
+
+    Crop() = default;
+    Crop(std::uint64_t crop_id, double crop_x, double crop_y, double radius);
+    Crop(std::uint64_t crop_id, double crop_x, double crop_y, std::vector<EllipseLeaf> crop_leaves);
 
     [[nodiscard]] bool operator==(const Crop& other) const noexcept;
 };
@@ -29,8 +43,12 @@ struct Aabb {
     [[nodiscard]] bool operator==(const Aabb& other) const noexcept;
 };
 
+[[nodiscard]] Aabb crop_bounds(const Crop& crop);
+[[nodiscard]] bool leaf_contains(const Crop& crop, const EllipseLeaf& leaf, double world_x,
+                                 double world_y) noexcept;
+
 class SpatialIndex final {
-public:
+  public:
     explicit SpatialIndex(const std::vector<Crop>& crops);
 
     [[nodiscard]] const Aabb& bounds() const noexcept { return bounds_; }
@@ -47,10 +65,10 @@ public:
         return references_;
     }
     [[nodiscard]] std::vector<std::size_t> query(const std::vector<Crop>& crops,
-                                                  const Aabb& bounds) const;
+                                                 const Aabb& bounds) const;
     [[nodiscard]] bool operator==(const SpatialIndex& other) const noexcept;
 
-private:
+  private:
     Aabb bounds_{};
     double cell_size_{1.0};
     std::size_t columns_{};
@@ -60,7 +78,7 @@ private:
 };
 
 class World final {
-public:
+  public:
     World(std::uint64_t seed, std::vector<Crop> crops);
 
     [[nodiscard]] std::uint64_t seed() const noexcept { return seed_; }
@@ -70,7 +88,7 @@ public:
     [[nodiscard]] std::vector<std::size_t> query(const Aabb& bounds) const;
     [[nodiscard]] bool operator==(const World& other) const noexcept;
 
-private:
+  private:
     std::uint64_t seed_{};
     std::vector<Crop> crops_;
     SpatialIndex spatial_index_;
@@ -80,4 +98,4 @@ private:
 [[nodiscard]] World world_from_yaml(std::string_view yaml,
                                     const generators::GeneratorFactory& factory);
 
-}  // namespace cropsim
+} // namespace cropsim

@@ -1,14 +1,13 @@
-#include "cropsim/world.hpp"
-
-#include "cropsim/generators/generation_context.hpp"
-#include "cropsim/generators/generator_factory.hpp"
-
 #include <yaml-cpp/yaml.h>
 
 #include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include "cropsim/generators/generation_context.hpp"
+#include "cropsim/generators/generator_factory.hpp"
+#include "cropsim/world.hpp"
 
 namespace cropsim {
 namespace {
@@ -20,14 +19,44 @@ double coordinate(const YAML::Node& node, const std::size_t index, const char* f
     return node[index].as<double>();
 }
 
-}  // namespace
+std::vector<EllipseLeaf> leaves(const YAML::Node& crop) {
+    const auto nodes = crop["leaves"];
+    if (!nodes) {
+        return {{0.0, 0.0, crop["radius"].as<double>(), crop["radius"].as<double>(), 0.0}};
+    }
+    if (!nodes.IsSequence() || nodes.size() == 0U) {
+        throw std::invalid_argument("leaves must be a non-empty sequence");
+    }
+    std::vector<EllipseLeaf> result;
+    result.reserve(nodes.size());
+    for (const auto& leaf : nodes) {
+        if (leaf["type"] && leaf["type"].as<std::string>() != "ellipse") {
+            throw std::invalid_argument("leaf type must be ellipse");
+        }
+        const auto position = leaf["position"] ? leaf["position"] : leaf["pos"];
+        const auto radii = leaf["radii"];
+        const auto radius_x = radii              ? coordinate(radii, 0, "radii")
+                              : leaf["radius_x"] ? leaf["radius_x"].as<double>()
+                                                 : leaf["rx"].as<double>();
+        const auto radius_y = radii              ? coordinate(radii, 1, "radii")
+                              : leaf["radius_y"] ? leaf["radius_y"].as<double>()
+                                                 : leaf["ry"].as<double>();
+        const auto rotation = leaf["rotation"] ? leaf["rotation"].as<double>()
+                              : leaf["theta"]  ? leaf["theta"].as<double>()
+                                               : 0.0;
+        result.push_back({coordinate(position, 0, "leaf position"),
+                          coordinate(position, 1, "leaf position"), radius_x, radius_y, rotation});
+    }
+    return result;
+}
+
+} // namespace
 
 World world_from_yaml(const std::string_view yaml) {
     return world_from_yaml(yaml, generators::make_builtin_generator_factory());
 }
 
-World world_from_yaml(const std::string_view yaml,
-                      const generators::GeneratorFactory& factory) {
+World world_from_yaml(const std::string_view yaml, const generators::GeneratorFactory& factory) {
     const auto root = YAML::Load(std::string(yaml));
     if (!root || !root.IsMap()) {
         throw std::invalid_argument("world description must be a YAML map");
@@ -46,7 +75,7 @@ World world_from_yaml(const std::string_view yaml,
         for (const auto& node : explicit_crops) {
             crops.push_back(context.make_crop(coordinate(node["position"], 0, "position"),
                                               coordinate(node["position"], 1, "position"),
-                                              node["radius"].as<double>()));
+                                              leaves(node)));
         }
     }
 
@@ -67,4 +96,4 @@ World world_from_yaml(const std::string_view yaml,
     return World(seed, std::move(crops));
 }
 
-}  // namespace cropsim
+} // namespace cropsim

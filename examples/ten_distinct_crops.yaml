@@ -1,0 +1,86 @@
+seed: 20261009
+
+# Ten deliberately different crops arranged in two rows. All leaf positions are
+# relative to their crop position, and all rotations are in radians.
+crops:
+  # 1. Four-leaf cross
+  - position: [0.0, 2.5]
+    leaves:
+      - {type: ellipse, position: [0.38, 0.0], radii: [0.55, 0.14], rotation: 0.0}
+      - {type: ellipse, position: [-0.38, 0.0], radii: [0.55, 0.14], rotation: 0.0}
+      - {type: ellipse, position: [0.0, 0.38], radii: [0.55, 0.14], rotation: 1.5708}
+      - {type: ellipse, position: [0.0, -0.38], radii: [0.55, 0.14], rotation: 1.5708}
+
+  # 2. Three-leaf fan
+  - position: [2.5, 2.5]
+    leaves:
+      - {type: ellipse, position: [-0.28, 0.12], radii: [0.72, 0.18], rotation: 2.65}
+      - {type: ellipse, position: [0.0, 0.32], radii: [0.78, 0.16], rotation: 1.5708}
+      - {type: ellipse, position: [0.28, 0.12], radii: [0.72, 0.18], rotation: 0.49}
+
+  # 3. Compact rosette
+  - position: [5.0, 2.5]
+    leaves:
+      - {type: ellipse, position: [0.35, 0.0], radii: [0.48, 0.22], rotation: 0.0}
+      - {type: ellipse, position: [0.11, 0.33], radii: [0.48, 0.22], rotation: 1.2566}
+      - {type: ellipse, position: [-0.28, 0.21], radii: [0.48, 0.22], rotation: 2.5133}
+      - {type: ellipse, position: [-0.28, -0.21], radii: [0.48, 0.22], rotation: -2.5133}
+      - {type: ellipse, position: [0.11, -0.33], radii: [0.48, 0.22], rotation: -1.2566}
+
+  # 4. Tall spear cluster
+  - position: [7.5, 2.5]
+    leaves:
+      - {type: ellipse, position: [0.0, 0.15], radii: [0.95, 0.11], rotation: 1.5708}
+      - {type: ellipse, position: [-0.24, -0.05], radii: [0.68, 0.12], rotation: 1.95}
+      - {type: ellipse, position: [0.24, -0.05], radii: [0.68, 0.12], rotation: 1.19}
+
+  # 5. Asymmetric windswept plant
+  - position: [10.0, 2.5]
+    leaves:
+      - {type: ellipse, position: [0.35, 0.15], radii: [0.95, 0.16], rotation: 0.35}
+      - {type: ellipse, position: [0.1, -0.2], radii: [0.7, 0.13], rotation: -0.35}
+      - {type: ellipse, position: [-0.25, 0.0], radii: [0.45, 0.2], rotation: 2.8}
+
+  # 6. Broad opposite pair with a small center leaf
+  - position: [0.0, 0.0]
+    leaves:
+      - {type: ellipse, position: [-0.42, 0.0], radii: [0.75, 0.3], rotation: 0.15}
+      - {type: ellipse, position: [0.42, 0.0], radii: [0.75, 0.3], rotation: -0.15}
+      - {type: ellipse, position: [0.0, 0.15], radii: [0.3, 0.18], rotation: 1.5708}
+
+  # 7. Pinwheel
+  - position: [2.5, 0.0]
+    leaves:
+      - {type: ellipse, position: [0.32, 0.18], radii: [0.62, 0.12], rotation: 0.55}
+      - {type: ellipse, position: [-0.18, 0.32], radii: [0.62, 0.12], rotation: 2.12}
+      - {type: ellipse, position: [-0.32, -0.18], radii: [0.62, 0.12], rotation: 3.69}
+      - {type: ellipse, position: [0.18, -0.32], radii: [0.62, 0.12], rotation: 5.26}
+
+  # 8. Dense eight-leaf flower
+  - position: [5.0, 0.0]
+    leaves:
+      - {type: ellipse, position: [0.34, 0.0], radii: [0.42, 0.1], rotation: 0.0}
+      - {type: ellipse, position: [0.24, 0.24], radii: [0.42, 0.1], rotation: 0.7854}
+      - {type: ellipse, position: [0.0, 0.34], radii: [0.42, 0.1], rotation: 1.5708}
+      - {type: ellipse, position: [-0.24, 0.24], radii: [0.42, 0.1], rotation: 2.3562}
+      - {type: ellipse, position: [-0.34, 0.0], radii: [0.42, 0.1], rotation: 3.1416}
+      - {type: ellipse, position: [-0.24, -0.24], radii: [0.42, 0.1], rotation: 3.9270}
+      - {type: ellipse, position: [0.0, -0.34], radii: [0.42, 0.1], rotation: 4.7124}
+      - {type: ellipse, position: [0.24, -0.24], radii: [0.42, 0.1], rotation: 5.4978}
+
+  # 9. Zig-zag stem-like arrangement
+  - position: [7.5, 0.0]
+    leaves:
+      - {type: ellipse, position: [-0.35, -0.5], radii: [0.5, 0.12], rotation: 2.6}
+      - {type: ellipse, position: [0.3, -0.18], radii: [0.58, 0.13], rotation: 0.45}
+      - {type: ellipse, position: [-0.28, 0.2], radii: [0.62, 0.13], rotation: 2.7}
+      - {type: ellipse, position: [0.25, 0.58], radii: [0.5, 0.11], rotation: 0.55}
+
+  # 10. Large tilted outer leaves surrounding a compact core
+  - position: [10.0, 0.0]
+    leaves:
+      - {type: ellipse, position: [-0.48, 0.35], radii: [0.82, 0.19], rotation: 2.35}
+      - {type: ellipse, position: [0.48, 0.35], radii: [0.82, 0.19], rotation: 0.79}
+      - {type: ellipse, position: [-0.35, -0.42], radii: [0.68, 0.16], rotation: -2.2}
+      - {type: ellipse, position: [0.35, -0.42], radii: [0.68, 0.16], rotation: -0.94}
+      - {type: ellipse, position: [0.0, 0.0], radii: [0.34, 0.28], rotation: 0.0}

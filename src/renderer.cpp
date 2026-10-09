@@ -26,30 +26,31 @@ GrayscaleImage render(const World& world, const View2D view, const std::size_t w
 
     for (const auto crop_index : world.query(view)) {
         const auto& crop = world.crops()[crop_index];
-        const auto first_column = static_cast<std::size_t>(std::clamp(
-            std::floor((crop.x - crop.radius - view.min_x) / scale_x), 0.0,
-            static_cast<double>(width - 1U)));
-        const auto last_column = static_cast<std::size_t>(std::clamp(
-            std::floor((crop.x + crop.radius - view.min_x) / scale_x), 0.0,
-            static_cast<double>(width - 1U)));
-        const auto first_row = static_cast<std::size_t>(std::clamp(
-            std::floor((view.max_y - crop.y - crop.radius) / scale_y), 0.0,
-            static_cast<double>(height - 1U)));
-        const auto last_row = static_cast<std::size_t>(std::clamp(
-            std::floor((view.max_y - crop.y + crop.radius) / scale_y), 0.0,
-            static_cast<double>(height - 1U)));
+        const auto bounds = crop_bounds(crop);
+        const auto first_column =
+            static_cast<std::size_t>(std::clamp(std::floor((bounds.min_x - view.min_x) / scale_x),
+                                                0.0, static_cast<double>(width - 1U)));
+        const auto last_column =
+            static_cast<std::size_t>(std::clamp(std::floor((bounds.max_x - view.min_x) / scale_x),
+                                                0.0, static_cast<double>(width - 1U)));
+        const auto first_row =
+            static_cast<std::size_t>(std::clamp(std::floor((view.max_y - bounds.max_y) / scale_y),
+                                                0.0, static_cast<double>(height - 1U)));
+        const auto last_row =
+            static_cast<std::size_t>(std::clamp(std::floor((view.max_y - bounds.min_y) / scale_y),
+                                                0.0, static_cast<double>(height - 1U)));
 
-        if (crop.x + crop.radius < view.min_x || crop.x - crop.radius > view.max_x ||
-            crop.y + crop.radius < view.min_y || crop.y - crop.radius > view.max_y) {
+        if (bounds.max_x < view.min_x || bounds.min_x > view.max_x || bounds.max_y < view.min_y ||
+            bounds.min_y > view.max_y) {
             continue;
         }
         for (std::size_t row = first_row; row <= last_row; ++row) {
             const auto y = view.max_y - (static_cast<double>(row) + 0.5) * scale_y;
             for (std::size_t column = first_column; column <= last_column; ++column) {
                 const auto x = view.min_x + (static_cast<double>(column) + 0.5) * scale_x;
-                const auto dx = x - crop.x;
-                const auto dy = y - crop.y;
-                if (dx * dx + dy * dy <= crop.radius * crop.radius) {
+                if (std::any_of(
+                        crop.leaves.begin(), crop.leaves.end(),
+                        [&](const EllipseLeaf& leaf) { return leaf_contains(crop, leaf, x, y); })) {
                     image.pixels[row * width + column] = 255U;
                 }
             }
@@ -72,4 +73,4 @@ void write_pgm(const GrayscaleImage& image, const std::filesystem::path& path) {
     }
 }
 
-}  // namespace cropsim
+} // namespace cropsim

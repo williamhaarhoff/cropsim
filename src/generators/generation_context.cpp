@@ -1,6 +1,7 @@
 #include "cropsim/generators/generation_context.hpp"
 
 #include <stdexcept>
+#include <utility>
 
 namespace cropsim::generators {
 namespace {
@@ -21,7 +22,7 @@ std::uint64_t splitmix64(std::uint64_t& state) noexcept {
     return value ^ (value >> splitmix_final_shift);
 }
 
-}  // namespace
+} // namespace
 
 GenerationContext::GenerationContext(const std::uint64_t seed) noexcept : random_state_(seed) {}
 
@@ -33,10 +34,14 @@ double GenerationContext::symmetric_unit() noexcept {
 }
 
 Crop GenerationContext::make_crop(const double x, const double y, const double radius) {
+    return make_crop(x, y, {{0.0, 0.0, radius, radius, 0.0}});
+}
+
+Crop GenerationContext::make_crop(const double x, const double y, std::vector<EllipseLeaf> leaves) {
     if (next_id_ == UINT64_MAX) {
         throw std::overflow_error("crop entity ID allocation overflow");
     }
-    return Crop{next_id_++, x, y, radius};
+    return Crop{next_id_++, x, y, std::move(leaves)};
 }
 
-}  // namespace cropsim::generators
+} // namespace cropsim::generators

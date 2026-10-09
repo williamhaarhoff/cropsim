@@ -14,8 +14,7 @@ constexpr std::array<std::byte, 8> magic{std::byte{'C'}, std::byte{'R'}, std::by
                                          std::byte{'P'}, std::byte{'S'}, std::byte{'I'},
                                          std::byte{'M'}, std::byte{0}};
 
-template <typename Integer>
-void append_integer(std::vector<std::byte>& output, Integer value) {
+template <typename Integer> void append_integer(std::vector<std::byte>& output, Integer value) {
     static_assert(std::is_unsigned_v<Integer>);
     for (std::size_t index = 0; index < sizeof(Integer); ++index) {
         output.push_back(static_cast<std::byte>(value & 0xffU));
@@ -31,11 +30,10 @@ void append_double(std::vector<std::byte>& output, const double value) {
 }
 
 class Reader final {
-public:
+  public:
     explicit Reader(const std::vector<std::byte>& input) : input_(input) {}
 
-    template <typename Integer>
-    Integer integer() {
+    template <typename Integer> Integer integer() {
         static_assert(std::is_unsigned_v<Integer>);
         require(sizeof(Integer));
         Integer value{};
@@ -64,7 +62,7 @@ public:
 
     [[nodiscard]] bool finished() const noexcept { return offset_ == input_.size(); }
 
-private:
+  private:
     void require(const std::size_t amount) const {
         if (amount > input_.size() - offset_) {
             throw std::runtime_error("truncated world snapshot");
@@ -75,11 +73,11 @@ private:
     std::size_t offset_{};
 };
 
-}  // namespace
+} // namespace
 
 std::vector<std::byte> serialise_snapshot(const World& world) {
     std::vector<std::byte> output;
-    output.reserve(magic.size() + 20U + world.size() * 32U);
+    output.reserve(magic.size() + 20U + world.size() * 40U);
     output.insert(output.end(), magic.begin(), magic.end());
     append_integer(output, world_snapshot_version);
     append_integer(output, world.seed());
@@ -88,7 +86,14 @@ std::vector<std::byte> serialise_snapshot(const World& world) {
         append_integer(output, crop.id);
         append_double(output, crop.x);
         append_double(output, crop.y);
-        append_double(output, crop.radius);
+        append_integer(output, static_cast<std::uint64_t>(crop.leaves.size()));
+        for (const auto& leaf : crop.leaves) {
+            append_double(output, leaf.x);
+            append_double(output, leaf.y);
+            append_double(output, leaf.radius_x);
+            append_double(output, leaf.radius_y);
+            append_double(output, leaf.rotation);
+        }
     }
     const auto& index = world.spatial_index();
     append_double(output, index.bounds().min_x);
@@ -113,7 +118,7 @@ World deserialise_snapshot(const std::vector<std::byte>& snapshot) {
     Reader reader(snapshot);
     reader.expect_magic();
     const auto version = reader.integer<std::uint32_t>();
-    if (version != 1U && version != world_snapshot_version) {
+    if (version != 1U && version != 2U && version != world_snapshot_version) {
         throw std::runtime_error("unsupported world snapshot version");
     }
     const auto seed = reader.integer<std::uint64_t>();
@@ -124,8 +129,26 @@ World deserialise_snapshot(const std::vector<std::byte>& snapshot) {
     std::vector<Crop> crops;
     crops.reserve(static_cast<std::size_t>(count));
     for (std::uint64_t index = 0; index < count; ++index) {
-        crops.push_back(Crop{reader.integer<std::uint64_t>(), reader.floating_point(),
-                             reader.floating_point(), reader.floating_point()});
+        const auto id = reader.integer<std::uint64_t>();
+        const auto x = reader.floating_point();
+        const auto y = reader.floating_point();
+        if (version <= 2U) {
+            crops.emplace_back(id, x, y, reader.floating_point());
+            continue;
+        }
+        const auto leaf_count = reader.integer<std::uint64_t>();
+        if (leaf_count == 0U ||
+            leaf_count > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+            throw std::runtime_error("world snapshot leaf count is invalid");
+        }
+        std::vector<EllipseLeaf> leaves;
+        leaves.reserve(static_cast<std::size_t>(leaf_count));
+        for (std::uint64_t leaf_index = 0; leaf_index < leaf_count; ++leaf_index) {
+            leaves.push_back({reader.floating_point(), reader.floating_point(),
+                              reader.floating_point(), reader.floating_point(),
+                              reader.floating_point()});
+        }
+        crops.emplace_back(id, x, y, std::move(leaves));
     }
     World world(seed, std::move(crops));
     if (version == 1U) {
@@ -195,4 +218,4 @@ World load_snapshot(const std::filesystem::path& path) {
     return deserialise_snapshot(bytes);
 }
 
-}  // namespace cropsim
+} // namespace cropsim

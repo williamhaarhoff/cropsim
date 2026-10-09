@@ -162,5 +162,22 @@ Acceptance criteria:
     - 1M Crops - single field size test 
     - 10M Crops - multi field test
 
+Goal:
+Use SDL Render/Graphics stack. CPU rendering is deterministic and is the source of truth. Viewing utility uses sped up GPU rendering, renders are approximate, not the source of truth. Support terminal rendering in so that unit tests can print images to terminal in case of failure. Nix derivation for viewer.
+
 # Current milestone
-Render/Graphics stack
+
+Goal:
+Add deterministic multi-leaf crops built from oriented ellipses and rendered with an orthographic projection. The canonical CPU renderer is a flat occupancy renderer: each sample reports whether any leaf covers that world coordinate. Overlapping leaves form a binary union; color, shading, lighting, and overlap count do not affect ground-truth output.
+
+Each crop contains an immutable, deterministically ordered collection of ellipse leaves. Every leaf has a position relative to the crop, two radii, and a rotation. Support constructing this geometry from YAML and generators, preserve it through versioned snapshot round-trips, and derive each crop's spatial bounds from its complete leaf set.
+
+Keep the GPU viewer approximate and render multi-leaf crops efficiently with instanced analytic ellipses. Provide a toggle between the canonical single-color occupancy view and deterministic per-leaf diagnostic colors for inspecting individual leaves and overlaps. Diagnostic colors are viewer-only, are derived rather than stored as semantic world data, and do not alter world state or canonical rendering.
+
+Acceptance criteria:
+- Explicit and generated multi-leaf crops regenerate deterministically.
+- Snapshot round-trips preserve exact leaf geometry and ordering.
+- CPU rendering produces the binary union of orthographically projected ellipses.
+- Spatial queries include every crop whose leaf geometry intersects the query.
+- The viewer renders multi-leaf crops efficiently with instanced analytic ellipses and supports the diagnostic color toggle.
+- Tests cover ellipse transforms, overlap union behavior, deterministic generation, snapshot compatibility, spatial extents, and viewer mode selection.

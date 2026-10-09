@@ -1,10 +1,10 @@
 #include <doctest/doctest.h>
 
-#include "cli.hpp"
-#include "cropsim/snapshot.hpp"
-
 #include <fstream>
 #include <stdexcept>
+
+#include "cli.hpp"
+#include "cropsim/snapshot.hpp"
 
 TEST_CASE("viewer requires exactly one input") {
     const char* none[] = {"cropsim_viewer"};
@@ -13,6 +13,15 @@ TEST_CASE("viewer requires exactly one input") {
     const char* both[] = {"cropsim_viewer", "--yaml", "a", "--snapshot", "b"};
     CHECK_THROWS_AS(static_cast<void>(cropsim::viewer::parse_options(5, both)),
                     std::invalid_argument);
+}
+
+TEST_CASE("viewer selects occupancy and diagnostic leaf modes") {
+    const char* occupancy[] = {"cropsim_viewer", "world.yaml"};
+    CHECK(cropsim::viewer::parse_options(2, occupancy).view_mode ==
+          cropsim::viewer::ViewMode::occupancy);
+    const char* diagnostic[] = {"cropsim_viewer", "world.yaml", "--diagnostic-colors"};
+    CHECK(cropsim::viewer::parse_options(3, diagnostic).view_mode ==
+          cropsim::viewer::ViewMode::diagnostic_leaves);
 }
 
 TEST_CASE("viewer loads snapshots without a display") {
