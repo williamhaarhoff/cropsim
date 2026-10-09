@@ -11,6 +11,12 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+Or build and run the C++ tests plus the spatial benchmark through the flake:
+
+```sh
+nix run .#cpp-test
+```
+
 The YAML format accepts explicit crops and deterministic grid generators. A `radius` is
 shorthand for one circular leaf:
 
