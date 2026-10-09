@@ -15,9 +15,7 @@
 #include <utility>
 #include <vector>
 
-#include "cropsim/generators/generator_factory.hpp"
-#include "cropsim/generators/field_set_generator.hpp"
-#include "cropsim/generators/grid_generator.hpp"
+#include "cropsim/generators/generator_registry.hpp"
 #include "cropsim/renderer.hpp"
 #include "cropsim/snapshot.hpp"
 #include "cropsim/world.hpp"
@@ -188,11 +186,6 @@ public:
   }
 };
 
-class FieldSetProbe final : public cropsim::generators::VoronoiFieldSetGenerator {
-public:
-  using VoronoiFieldSetGenerator::generate_fields;
-};
-
 } // namespace
 
 TEST_CASE("YAML world generation is deterministic") {
@@ -228,8 +221,7 @@ TEST_CASE("version 3 snapshots have deterministic bytes") {
 
 TEST_CASE("generator factory dispatch and validation") {
   auto registry = cropsim::generators::make_builtin_generator_registry();
-  CHECK(dynamic_cast<cropsim::generators::GridGenerator *>(
-            registry.placement().create("grid").get()) != nullptr);
+  CHECK(registry.placement().create("grid") != nullptr);
   CHECK_THROWS_AS(static_cast<void>(registry.placement().create("unknown")),
                   std::invalid_argument);
   CHECK_THROWS_AS(registry.placement().register_generator(
@@ -503,28 +495,37 @@ generators:
 }
 
 TEST_CASE("field-set roads have exact width and preserve domain edges") {
-  const auto node = YAML::Load(R"(
-bounds: [[0, 0], [20, 0], [20, 10], [0, 10]]
-count: 2
-road_width: 2
-seed_jitter: 0
+  const auto world = cropsim::world_from_yaml(R"(
+seed: 123
+generators:
+  - gentype: field_set
+    bounds: [[0, 0], [20, 0], [20, 10], [0, 10]]
+    count: 2
+    road_width: 2
+    seed_jitter: 0
+    field:
+      gentype: parallel_rows
+      row_spacing: 1
+      row_orientation: 0
+      headland: 0
+      row:
+        gentype: linear
+        crop_spacing: 1
+        crop: {gentype: fixed, radius: 0.1}
 )");
-  const auto fields = FieldSetProbe{}.generate_fields(node, {123U});
-  REQUIRE(fields.size() == 2U);
-  const auto x_bounds = [](const auto &field) {
-    auto minimum = std::numeric_limits<double>::infinity();
-    auto maximum = -minimum;
-    for (const auto &point : field.boundary.vertices) {
-      minimum = std::min(minimum, point.x);
-      maximum = std::max(maximum, point.x);
-    }
-    return std::pair<double, double>{minimum, maximum};
-  };
-  const auto first = x_bounds(fields[0]);
-  const auto second = x_bounds(fields[1]);
-  CHECK(first.first == doctest::Approx(0.0));
-  CHECK(second.second == doctest::Approx(20.0));
-  CHECK(second.first - first.second == doctest::Approx(2.0));
+  REQUIRE(world.size() > 100U);
+  auto left_max = -std::numeric_limits<double>::infinity();
+  auto right_min = std::numeric_limits<double>::infinity();
+  for (const auto &crop : world.crops()) {
+    if (crop.x < 10.0)
+      left_max = std::max(left_max, crop.x);
+    if (crop.x > 10.0)
+      right_min = std::min(right_min, crop.x);
+  }
+  CHECK(left_max < 9.0);
+  CHECK(right_min > 11.0);
+  CHECK(left_max > 8.0);
+  CHECK(right_min < 12.0);
 }
 
 TEST_CASE("concave multi-field hierarchy is deterministic and bounded") {

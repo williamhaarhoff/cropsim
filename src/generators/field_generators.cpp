@@ -1,4 +1,5 @@
-#include "cropsim/generators/parallel_row_field_generator.hpp"
+#include "builtin_generators.hpp"
+#include "cropsim/generators/generator_registry.hpp"
 
 #include "geometry.hpp"
 
@@ -40,16 +41,14 @@ ParallelRowFieldGenerator::generate(const YAML::Node &node,
       node["row_spacing"] ? node["row_spacing"].as<double>() : 0.75;
   const auto jitter =
       node["row_jitter"] ? node["row_jitter"].as<double>() : 0.0;
-  const auto headland =
-      node["headland"] ? node["headland"].as<double>() : 0.5;
+  const auto headland = node["headland"] ? node["headland"].as<double>() : 0.5;
   const auto offset = node["orientation_offset"]
                           ? node["orientation_offset"].as<double>()
                           : 0.0;
   auto angle = orientation(node, field.boundary);
   if (!std::isfinite(spacing) || spacing <= 0.0 || !std::isfinite(jitter) ||
-      jitter < 0.0 || jitter >= spacing / 2.0 ||
-      !std::isfinite(headland) || headland < 0.0 ||
-      !std::isfinite(angle) || !std::isfinite(offset)) {
+      jitter < 0.0 || jitter >= spacing / 2.0 || !std::isfinite(headland) ||
+      headland < 0.0 || !std::isfinite(angle) || !std::isfinite(offset)) {
     throw std::invalid_argument("invalid parallel-row field parameters");
   }
   angle = normalize(angle + offset);
@@ -77,11 +76,12 @@ ParallelRowFieldGenerator::generate(const YAML::Node &node,
     const auto width = max_across - min_across;
     const auto raw_count = std::floor(width / spacing);
     if (!std::isfinite(raw_count) ||
-        raw_count > static_cast<double>(std::numeric_limits<std::size_t>::max())) {
+        raw_count >
+            static_cast<double>(std::numeric_limits<std::size_t>::max())) {
       throw std::overflow_error("field row count overflow");
     }
-    const auto count = std::max<std::size_t>(
-        1U, static_cast<std::size_t>(raw_count));
+    const auto count =
+        std::max<std::size_t>(1U, static_cast<std::size_t>(raw_count));
     const auto occupied = static_cast<double>(count - 1U) * spacing;
     const auto start = (min_across + max_across - occupied) / 2.0;
     const auto extension = std::max(spacing, max_along - min_along);
@@ -89,19 +89,25 @@ ParallelRowFieldGenerator::generate(const YAML::Node &node,
       auto stream = RandomStream(key.child(row_jitter_domain, row_index).value);
       const auto across = start + static_cast<double>(index) * spacing +
                           stream.symmetric_unit() * jitter;
-      const Point2 begin{direction.x * (min_along - extension) +
-                             normal.x * across,
-                         direction.y * (min_along - extension) +
-                             normal.y * across};
-      const Point2 end{direction.x * (max_along + extension) + normal.x * across,
-                       direction.y * (max_along + extension) + normal.y * across};
-      auto segments = geometry::clip_line(
-          component, begin, end, field.seed_index, row_index, spacing);
+      const Point2 begin{
+          direction.x * (min_along - extension) + normal.x * across,
+          direction.y * (min_along - extension) + normal.y * across};
+      const Point2 end{
+          direction.x * (max_along + extension) + normal.x * across,
+          direction.y * (max_along + extension) + normal.y * across};
+      auto segments = geometry::clip_line(component, begin, end,
+                                          field.seed_index, row_index, spacing);
       result.insert(result.end(), segments.begin(), segments.end());
       ++row_index;
     }
   }
   return result;
+}
+
+void register_builtin_field_generators(FieldGeneratorFactory &factory) {
+  factory.register_generator("parallel_rows", [] {
+    return std::make_unique<ParallelRowFieldGenerator>();
+  });
 }
 
 } // namespace cropsim::generators

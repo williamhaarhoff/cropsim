@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 #include <yaml-cpp/yaml.h>
-#include "cropsim/generators/modifier_field.hpp"
+#include "cropsim/modifiers/modifier_fields.hpp"
 #include "cropsim/snapshot.hpp"
 #include "cropsim/world.hpp"
 

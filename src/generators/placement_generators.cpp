@@ -1,5 +1,6 @@
-#include "cropsim/generators/grid_generator.hpp"
-#include "cropsim/generators/generator_factory.hpp"
+#include "builtin_generators.hpp"
+
+#include "cropsim/generators/generator_registry.hpp"
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -74,5 +75,10 @@ void GridGenerator::generate(const YAML::Node &node, GenerationContext &context,
           x, y, crop_generator->generate(geometry, morphology)));
     }
   }
+}
+
+void register_builtin_placement_generators(PlacementGeneratorFactory &factory) {
+  factory.register_generator("grid",
+                             [] { return std::make_unique<GridGenerator>(); });
 }
 } // namespace cropsim::generators

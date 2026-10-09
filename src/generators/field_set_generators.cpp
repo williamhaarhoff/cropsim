@@ -1,7 +1,7 @@
-#include "cropsim/generators/field_set_generator.hpp"
+#include "builtin_generators.hpp"
 
-#include "cropsim/generators/generator_factory.hpp"
-#include "cropsim/generators/modifier_field.hpp"
+#include "cropsim/generators/generator_registry.hpp"
+#include "cropsim/modifiers/modifier_fields.hpp"
 #include "geometry.hpp"
 
 #include <algorithm>
@@ -88,7 +88,8 @@ std::vector<Point2> clip_halfplane(const std::vector<Point2> &polygon,
     const auto previous_inside = previous_distance <= 0.0;
     const auto current_inside = current_distance <= 0.0;
     if (previous_inside != current_inside) {
-      const auto ratio = previous_distance / (previous_distance - current_distance);
+      const auto ratio =
+          previous_distance / (previous_distance - current_distance);
       output.push_back({previous.x + ratio * (current.x - previous.x),
                         previous.y + ratio * (current.y - previous.y)});
     }
@@ -102,13 +103,16 @@ std::vector<Point2> clip_halfplane(const std::vector<Point2> &polygon,
 }
 
 std::vector<Point2> rectangle(const Bounds &value) {
-  return {{value.min_x, value.min_y}, {value.max_x, value.min_y},
-          {value.max_x, value.max_y}, {value.min_x, value.max_y}};
+  return {{value.min_x, value.min_y},
+          {value.max_x, value.min_y},
+          {value.max_x, value.max_y},
+          {value.min_x, value.max_y}};
 }
 
-std::vector<std::size_t>
-active_neighbours(const std::vector<Point2> &cell, const Point2 seed,
-                  const std::vector<Point2> &seeds, const double tolerance) {
+std::vector<std::size_t> active_neighbours(const std::vector<Point2> &cell,
+                                           const Point2 seed,
+                                           const std::vector<Point2> &seeds,
+                                           const double tolerance) {
   std::vector<std::size_t> result;
   for (std::size_t other = 0; other < seeds.size(); ++other) {
     if (seeds[other].x == seed.x && seeds[other].y == seed.y) {
@@ -145,7 +149,8 @@ std::vector<Point2> seeds_for_attempt(const Polygon2 &domain,
   const auto fill = geometry::area(domain) / (width * height);
   const auto estimated = std::ceil(static_cast<double>(count) / fill * 1.25);
   if (!std::isfinite(estimated) ||
-      estimated > static_cast<double>(std::numeric_limits<std::size_t>::max())) {
+      estimated >
+          static_cast<double>(std::numeric_limits<std::size_t>::max())) {
     throw std::overflow_error("field-set seed count overflow");
   }
   auto target = static_cast<std::size_t>(estimated);
@@ -162,30 +167,29 @@ std::vector<Point2> seeds_for_attempt(const Polygon2 &domain,
     for (std::size_t row = 0; row < rows; ++row) {
       for (std::size_t column = 0; column < columns; ++column) {
         const auto rank = row * columns + column;
-        auto stream = RandomStream(
-            attempt_key.child(seed_domain, rank).value);
+        auto stream = RandomStream(attempt_key.child(seed_domain, rank).value);
         const Point2 point{
             box.min_x + (static_cast<double>(column) + 0.5) * cell_width +
                 stream.symmetric_unit() * jitter * cell_width / 2.0,
             box.min_y + (static_cast<double>(row) + 0.5) * cell_height +
                 stream.symmetric_unit() * jitter * cell_height / 2.0};
         if (geometry::covered_by(point, domain)) {
-          auto priority = RandomStream(
-              attempt_key.child(priority_domain, rank).value);
+          auto priority =
+              RandomStream(attempt_key.child(priority_domain, rank).value);
           candidates.push_back({point, rank, priority.uniform_open()});
         }
       }
     }
     if (candidates.size() >= count) {
-      std::sort(candidates.begin(), candidates.end(), [](const auto &left,
-                                                         const auto &right) {
-        return left.priority < right.priority;
-      });
+      std::sort(candidates.begin(), candidates.end(),
+                [](const auto &left, const auto &right) {
+                  return left.priority < right.priority;
+                });
       candidates.resize(count);
-      std::sort(candidates.begin(), candidates.end(), [](const auto &left,
-                                                         const auto &right) {
-        return left.rank < right.rank;
-      });
+      std::sort(candidates.begin(), candidates.end(),
+                [](const auto &left, const auto &right) {
+                  return left.rank < right.rank;
+                });
       std::vector<Point2> result;
       result.reserve(count);
       for (const auto &candidate : candidates) {
@@ -227,16 +231,16 @@ void FieldSetGenerator::generate(const YAML::Node &node,
       registry.fields().create(field_node["gentype"].as<std::string>());
   const auto row_generator =
       registry.rows().create(row_node["gentype"].as<std::string>());
-  const auto crop_generator =
-      registry.crops().create(crop_node["gentype"].as<std::string>(), crop_node,
-                              &modifiers);
+  const auto crop_generator = registry.crops().create(
+      crop_node["gentype"].as<std::string>(), crop_node, &modifiers);
   const auto fields = generate_fields(node, key);
   std::vector<double> modifier_values;
   modifier_values.reserve(modifiers.size());
-  for (std::size_t field_index = 0; field_index < fields.size(); ++field_index) {
+  for (std::size_t field_index = 0; field_index < fields.size();
+       ++field_index) {
     const auto field_key = key.child(field_domain, field_index);
-    const auto rows = field_generator->generate(field_node, fields[field_index],
-                                                field_key);
+    const auto rows =
+        field_generator->generate(field_node, fields[field_index], field_key);
     if (rows.empty()) {
       throw std::runtime_error("field generator produced no rows");
     }
@@ -248,7 +252,8 @@ void FieldSetGenerator::generate(const YAML::Node &node,
         throw std::runtime_error("row generator produced no crops");
       }
       if (positions.size() > destination.max_size() - destination.size()) {
-        throw std::overflow_error("hierarchical crop destination size overflow");
+        throw std::overflow_error(
+            "hierarchical crop destination size overflow");
       }
       for (std::size_t crop_index = 0; crop_index < positions.size();
            ++crop_index) {
@@ -291,8 +296,8 @@ VoronoiFieldSetGenerator::generate_fields(const YAML::Node &node,
     throw std::overflow_error("field-set count overflow");
   }
   const auto box = bounds(domain);
-  const auto diagonal = std::hypot(box.max_x - box.min_x,
-                                   box.max_y - box.min_y);
+  const auto diagonal =
+      std::hypot(box.max_x - box.min_x, box.max_y - box.min_y);
   const auto tolerance = diagonal * 1e-9;
   for (std::size_t attempt = 0; attempt < maximum_layout_attempts; ++attempt) {
     const auto attempt_key = key.child(seed_domain, attempt);
@@ -336,8 +341,8 @@ VoronoiFieldSetGenerator::generate_fields(const YAML::Node &node,
         valid = false;
         break;
       }
-      fields.push_back({static_cast<std::uint64_t>(index), seeds[index],
-                        pieces.front()});
+      fields.push_back(
+          {static_cast<std::uint64_t>(index), seeds[index], pieces.front()});
     }
     if (valid && fields.size() == count) {
       return fields;
@@ -345,6 +350,11 @@ VoronoiFieldSetGenerator::generate_fields(const YAML::Node &node,
   }
   throw std::runtime_error(
       "field-set layout exhausted after 128 deterministic attempts");
+}
+
+void register_builtin_field_set_generators(PlacementGeneratorFactory &factory) {
+  factory.register_generator(
+      "field_set", [] { return std::make_unique<VoronoiFieldSetGenerator>(); });
 }
 
 } // namespace cropsim::generators

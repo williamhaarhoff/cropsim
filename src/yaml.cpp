@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "cropsim/generators/generation_context.hpp"
-#include "cropsim/generators/generator_factory.hpp"
+#include "cropsim/generators/generator_registry.hpp"
 #include "cropsim/world.hpp"
 
 namespace cropsim {

@@ -1,4 +1,5 @@
-#include "cropsim/generators/linear_row_generator.hpp"
+#include "builtin_generators.hpp"
+#include "cropsim/generators/generator_registry.hpp"
 
 #include "geometry.hpp"
 
@@ -19,12 +20,10 @@ LinearRowGenerator::generate(const YAML::Node &node, const RowSegment &row,
                              const GenerationKey key) const {
   const auto spacing =
       node["crop_spacing"] ? node["crop_spacing"].as<double>() : 0.25;
-  const auto along_jitter = node["along_jitter"]
-                                ? node["along_jitter"].as<double>()
-                                : 0.0;
-  const auto cross_jitter = node["cross_jitter"]
-                                ? node["cross_jitter"].as<double>()
-                                : 0.0;
+  const auto along_jitter =
+      node["along_jitter"] ? node["along_jitter"].as<double>() : 0.0;
+  const auto cross_jitter =
+      node["cross_jitter"] ? node["cross_jitter"].as<double>() : 0.0;
   if (!std::isfinite(spacing) || spacing <= 0.0 ||
       !std::isfinite(along_jitter) || along_jitter < 0.0 ||
       along_jitter >= spacing / 2.0 || !std::isfinite(cross_jitter) ||
@@ -41,7 +40,8 @@ LinearRowGenerator::generate(const YAML::Node &node, const RowSegment &row,
   const Point2 normal{-direction.y, direction.x};
   const auto raw_count = std::floor(length / spacing);
   if (!std::isfinite(raw_count) ||
-      raw_count > static_cast<double>(std::numeric_limits<std::size_t>::max())) {
+      raw_count >
+          static_cast<double>(std::numeric_limits<std::size_t>::max())) {
     throw std::overflow_error("row crop count overflow");
   }
   const auto count =
@@ -57,10 +57,9 @@ LinearRowGenerator::generate(const YAML::Node &node, const RowSegment &row,
       const auto along = start + static_cast<double>(index) * spacing +
                          stream.symmetric_unit() * along_jitter;
       const auto across = stream.symmetric_unit() * cross_jitter;
-      const Point2 candidate{row.begin.x + direction.x * along +
-                                 normal.x * across,
-                             row.begin.y + direction.y * along +
-                                 normal.y * across};
+      const Point2 candidate{
+          row.begin.x + direction.x * along + normal.x * across,
+          row.begin.y + direction.y * along + normal.y * across};
       if (geometry::covered_by(candidate, row.plantable_boundary)) {
         result.push_back(candidate);
         accepted = true;
@@ -73,6 +72,11 @@ LinearRowGenerator::generate(const YAML::Node &node, const RowSegment &row,
     }
   }
   return result;
+}
+
+void register_builtin_row_generators(RowGeneratorFactory &factory) {
+  factory.register_generator(
+      "linear", [] { return std::make_unique<LinearRowGenerator>(); });
 }
 
 } // namespace cropsim::generators

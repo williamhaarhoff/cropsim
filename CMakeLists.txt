@@ -15,15 +15,15 @@ find_package(Boost REQUIRED)
 
 add_library(cropsim
     src/generators/generation_context.cpp
-    src/generators/generator_factory.cpp
-    src/generators/fixed_crop_generator.cpp
-    src/generators/field_set_generator.cpp
+    src/generators/generator_registry.cpp
+    src/generators/crop_generators.cpp
+    src/generators/field_set_generators.cpp
     src/generators/geometry.cpp
-    src/generators/generic_crop_generator.cpp
-    src/generators/grid_generator.cpp
-    src/generators/linear_row_generator.cpp
-    src/generators/modifier_field.cpp
-    src/generators/parallel_row_field_generator.cpp
+    src/generators/placement_generators.cpp
+    src/generators/row_generators.cpp
+    src/generators/field_generators.cpp
+    src/expression/expression.cpp
+    src/modifiers/modifier_fields.cpp
     src/image_assertion.cpp
     src/renderer.cpp
     src/snapshot.cpp

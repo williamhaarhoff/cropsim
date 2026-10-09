@@ -1,11 +1,6 @@
-#include "cropsim/generators/generator_factory.hpp"
+#include "cropsim/generators/generator_registry.hpp"
 
-#include "cropsim/generators/fixed_crop_generator.hpp"
-#include "cropsim/generators/field_set_generator.hpp"
-#include "cropsim/generators/generic_crop_generator.hpp"
-#include "cropsim/generators/grid_generator.hpp"
-#include "cropsim/generators/linear_row_generator.hpp"
-#include "cropsim/generators/parallel_row_field_generator.hpp"
+#include "builtin_generators.hpp"
 
 #include <stdexcept>
 #include <utility>
@@ -46,17 +41,18 @@ PlacementGeneratorFactory::create(const std::string_view name) const {
 void CropGeneratorFactory::register_generator(std::string name,
                                               Creator creator) {
   if (!creator) {
-    throw std::invalid_argument("crop generator registration requires a name and creator");
+    throw std::invalid_argument(
+        "crop generator registration requires a name and creator");
   }
-  register_generator(std::move(name),
-                     [creator = std::move(creator)](const YAML::Node &node,
-                                                    const ModifierFieldSet *fields) {
-                       auto result = creator();
-                       if (result && node.IsDefined() && !node.IsNull()) {
-                         result->configure(node, fields);
-                       }
-                       return result;
-                     });
+  register_generator(std::move(name), [creator = std::move(creator)](
+                                          const YAML::Node &node,
+                                          const ModifierFieldSet *fields) {
+    auto result = creator();
+    if (result && node.IsDefined() && !node.IsNull()) {
+      result->configure(node, fields);
+    }
+    return result;
+  });
 }
 
 void CropGeneratorFactory::register_generator(std::string name,
@@ -74,7 +70,8 @@ void CropGeneratorFactory::register_generator(std::string name,
 }
 
 std::unique_ptr<CropGenerator>
-CropGeneratorFactory::create(const std::string_view name, const YAML::Node &node,
+CropGeneratorFactory::create(const std::string_view name,
+                             const YAML::Node &node,
                              const ModifierFieldSet *modifiers) const {
   const auto found = creators_.find(std::string(name));
   if (found == creators_.end()) {
@@ -147,19 +144,11 @@ RowGeneratorFactory::create(const std::string_view name) const {
 GeneratorRegistry make_builtin_generator_registry() {
   GeneratorRegistry registry;
   registry.modifier_fields() = make_builtin_modifier_field_factory();
-  registry.placement().register_generator(
-      "grid", [] { return std::make_unique<GridGenerator>(); });
-  registry.placement().register_generator(
-      "field_set", [] { return std::make_unique<VoronoiFieldSetGenerator>(); });
-  registry.fields().register_generator(
-      "parallel_rows",
-      [] { return std::make_unique<ParallelRowFieldGenerator>(); });
-  registry.rows().register_generator(
-      "linear", [] { return std::make_unique<LinearRowGenerator>(); });
-  registry.crops().register_generator(
-      "fixed", [] { return std::make_unique<FixedCropGenerator>(); });
-  registry.crops().register_generator(
-      "generic", [] { return std::make_unique<GenericCropGenerator>(); });
+  register_builtin_placement_generators(registry.placement());
+  register_builtin_field_set_generators(registry.placement());
+  register_builtin_field_generators(registry.fields());
+  register_builtin_row_generators(registry.rows());
+  register_builtin_crop_generators(registry.crops());
   return registry;
 }
 
