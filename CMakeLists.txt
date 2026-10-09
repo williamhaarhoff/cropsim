@@ -6,6 +6,9 @@ option(CROPSIM_BUILD_TESTS "Build cropsim tests" ON)
 find_package(yaml-cpp REQUIRED)
 
 add_library(cropsim
+    src/generators/generation_context.cpp
+    src/generators/generator_factory.cpp
+    src/generators/grid_generator.cpp
     src/renderer.cpp
     src/snapshot.cpp
     src/world.cpp

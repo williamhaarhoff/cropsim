@@ -126,7 +126,38 @@ Use a separate directory for tests.
 Developing on nixos, ideally this project will be managed with a flake. Otherwise, it should still be a normal c++ library that other projects can include. 
 
 
-# Current milestone
+# First milestone
 immutable world storage, one crop representation,
 deterministic YAML generation, versioned binary round-trip, one headless renderer, and tests proving identical
 regeneration. That validates the core model before observers, algorithms, and critics broaden the design.
+
+# Past milestones
+Goal:
+Introduce an internal generator subsystem under include/cropsim/generators and src/generators. All concrete generators derive from an abstract Generator interface and create crops through a shared deterministic generation context that owns PRNG state and entity-ID allocation. Add a factory that maps the YAML gentype value to built-in generator implementations. Extract the existing grid generation logic unchanged, keep generators out of world snapshots, and support explicit crops and generated crops in the same description.
+
+Acceptance criteria:
+  - The existing example generates byte-for-byte identical snapshots before and after the refactor.
+  - Factory dispatch constructs the grid generator from gentype.
+  - Unknown and missing gentype values are rejected.
+  - Multiple generators receive unique sequential crop IDs and deterministic random values.
+  - Explicit and generated crops coexist with stable ordering.
+  - Invalid grid parameters and multiplication overflow are rejected.
+  - A second test-only generator can be added without editing the world-building control flow, demonstrating that
+    the abstraction actually removes the current type-specific branch.
+
+# Current milestone
+Goal:
+Introduce spatial indexing / crop ordering scheme optimised for sequential rendering (sequential frames will be spatially close, or will overlap).
+- zigzag ordering of crops along the row, so observation along the row maximises cache hits.
+- spatial lookups need to consider the extent of crops, not just the centroid, likely use world aligned bounding box
+- do not over optimise at the expense of world generation time, building the spatial index for 10M, crops should take <5 seconds.
+
+Acceptance criteria:
+- world representation has includes the spatial index which can also be serialised deterministically
+- spatial indexing / crop ordering is deterministic
+- bench marking tests (in test suite) for both world creation and lookup
+    - world is simple square, density is kept the same
+    - 50 Crops - small test size
+    - 1000 Crops - short run
+    - 1M Crops - single field size test 
+    - 10M Crops - multi field test

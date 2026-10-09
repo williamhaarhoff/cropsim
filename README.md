@@ -19,7 +19,7 @@ crops:
   - position: [0.25, 0.75]
     radius: 0.1
 generators:
-  - type: grid
+  - gentype: grid
     origin: [1.0, 2.0]
     rows: 2
     columns: 3

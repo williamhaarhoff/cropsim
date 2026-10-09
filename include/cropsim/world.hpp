@@ -7,6 +7,10 @@
 
 namespace cropsim {
 
+namespace generators {
+class GeneratorFactory;
+}
+
 struct Crop {
     std::uint64_t id{};
     double x{};
@@ -31,5 +35,7 @@ private:
 };
 
 [[nodiscard]] World world_from_yaml(std::string_view yaml);
+[[nodiscard]] World world_from_yaml(std::string_view yaml,
+                                    const generators::GeneratorFactory& factory);
 
 }  // namespace cropsim
