@@ -1,0 +1,27 @@
+seed: 568616
+generators:
+  - gentype: field_set
+    bounds: [[0, 0], [120, 0], [120, 20], [0, 20]]
+    count: 20
+    road_width: 2.0
+    seed_jitter: 1
+    field:
+      gentype: parallel_rows
+      # orientation: 
+      headland: 0.5
+      beds:
+        top_width: 1.8
+        center_spacing: 2.0
+        lines_per_bed: 6
+        wave:
+          amplitude: 0.1
+          wavelength: 100.0
+          phase: random
+      row:
+        gentype: linear
+        crop_spacing: 0.24
+        along_jitter: 0.05
+        cross_jitter: 0.04
+        crop:
+          leaf_num: {mean: 8, min: 4, max: 12}
+          gentype: generic

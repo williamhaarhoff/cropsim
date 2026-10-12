@@ -3,6 +3,7 @@
 #include "cropsim/generators/generation_context.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace YAML {
@@ -37,6 +38,8 @@ struct RowSegment final {
   Point2 end;
   Polygon2 plantable_boundary;
   double row_spacing{};
+  std::vector<Point2> path;
+  std::optional<double> crop_phase;
 };
 
 class PlacementGenerator {

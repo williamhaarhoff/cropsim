@@ -206,9 +206,52 @@ clip_line(const Polygon2 &polygon, const Point2 begin, const Point2 end,
       std::swap(first, last);
     }
     result.push_back(
-        {field_index, row_index, first, last, polygon, row_spacing});
+        {field_index, row_index, first, last, polygon, row_spacing, {}, {}});
   }
   std::sort(result.begin(), result.end(), [dx, dy](const auto &left, const auto &right) {
+    return left.begin.x * dx + left.begin.y * dy <
+           right.begin.x * dx + right.begin.y * dy;
+  });
+  return result;
+}
+
+std::vector<RowSegment>
+clip_path(const Polygon2 &polygon, const std::vector<Point2> &path,
+          const std::uint64_t field_index, const std::uint64_t row_index,
+          const double row_spacing, const std::optional<double> crop_phase) {
+  if (path.size() < 2U) {
+    throw std::invalid_argument("row path must contain at least two points");
+  }
+  BoostLine line;
+  line.reserve(path.size());
+  for (const auto &point : path) {
+    line.emplace_back(point.x, point.y);
+  }
+  std::vector<BoostLine> output;
+  bg::intersection(line, to_boost(polygon), output);
+  const auto dx = path.back().x - path.front().x;
+  const auto dy = path.back().y - path.front().y;
+  std::vector<RowSegment> result;
+  for (auto &item : output) {
+    if (item.size() < 2U || bg::length(item) <= 0.0) {
+      continue;
+    }
+    const auto projection = [dx, dy](const BoostPoint &point) {
+      return bg::get<0>(point) * dx + bg::get<1>(point) * dy;
+    };
+    if (projection(item.front()) > projection(item.back())) {
+      std::reverse(item.begin(), item.end());
+    }
+    std::vector<Point2> clipped;
+    clipped.reserve(item.size());
+    for (const auto &point : item) {
+      clipped.push_back({bg::get<0>(point), bg::get<1>(point)});
+    }
+    result.push_back({field_index, row_index, clipped.front(), clipped.back(),
+                      polygon, row_spacing, std::move(clipped), crop_phase});
+  }
+  std::sort(result.begin(), result.end(), [dx, dy](const auto &left,
+                                                   const auto &right) {
     return left.begin.x * dx + left.begin.y * dy <
            right.begin.x * dx + right.begin.y * dy;
   });

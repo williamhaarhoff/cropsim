@@ -8,6 +8,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
+#include <optional>
 #include <vector>
 
 namespace cropsim::generators::geometry {
@@ -32,6 +33,10 @@ using BoostMultiPolygon = bg::model::multi_polygon<BoostPolygon>;
 clip_line(const Polygon2 &polygon, Point2 begin, Point2 end,
           std::uint64_t field_index, std::uint64_t row_index,
           double row_spacing);
+[[nodiscard]] std::vector<RowSegment>
+clip_path(const Polygon2 &polygon, const std::vector<Point2> &path,
+          std::uint64_t field_index, std::uint64_t row_index,
+          double row_spacing, std::optional<double> crop_phase = std::nullopt);
 [[nodiscard]] double principal_orientation(const Polygon2 &polygon);
 [[nodiscard]] double minimum_oriented_width(const Polygon2 &polygon);
 [[nodiscard]] Polygon2 canonical(Polygon2 polygon);

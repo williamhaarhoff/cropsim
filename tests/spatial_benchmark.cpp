@@ -80,6 +80,34 @@ void run_field_case(const std::size_t count) {
               << '\n';
 }
 
+void run_bedded_case() {
+    const auto start = Clock::now();
+    const auto world = cropsim::world_from_yaml(R"(
+seed: 1234
+generators:
+  - gentype: field_set
+    bounds: [[0, 0], [200, 0], [200, 100], [0, 100]]
+    count: 1
+    road_width: 0
+    seed_jitter: 0
+    field:
+      gentype: parallel_rows
+      orientation: 0
+      headland: 0
+      beds: {top_width: 1.8, center_spacing: 2, lines_per_bed: 6}
+      row:
+        gentype: linear
+        crop_spacing: 0.2
+        crop: {gentype: fixed, radius: 0.05}
+)");
+    const auto end = Clock::now();
+    std::cout << std::fixed << std::setprecision(2)
+              << "bedded_length_m=200 bedded_width_m=100 crops=" << world.size()
+              << " hierarchy_ms="
+              << std::chrono::duration<double, std::milli>(end - start).count()
+              << '\n';
+}
+
 }  // namespace
 
 int main() {
@@ -90,4 +118,5 @@ int main() {
     for (const auto count : {std::size_t{10}, std::size_t{100}, std::size_t{500}}) {
         run_field_case(count);
     }
+    run_bedded_case();
 }

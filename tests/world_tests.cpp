@@ -143,7 +143,8 @@ public:
              {1.0, 2.0},
              {5.0, 2.0},
              {{{0.0, 0.0}, {6.0, 0.0}, {6.0, 4.0}, {0.0, 4.0}}},
-             1.0}};
+             1.0,
+             {}, {}}};
   }
 };
 
@@ -163,8 +164,9 @@ public:
            cropsim::generators::GenerationKey) const override {
     const cropsim::generators::Polygon2 boundary{
         {{0.0, 0.0}, {10.0, 0.0}, {10.0, 5.0}, {0.0, 5.0}}};
-    return {{field.seed_index, 0U, {1.0, 1.0}, {9.0, 1.0}, boundary, 1.0},
-            {field.seed_index, 1U, {1.0, 3.0}, {9.0, 3.0}, boundary, 1.0}};
+    return {{field.seed_index, 0U, {1.0, 1.0}, {9.0, 1.0}, boundary, 1.0, {},
+             {}},
+            {field.seed_index, 1U, {1.0, 3.0}, {9.0, 3.0}, boundary, 1.0, {}, {}}};
   }
 };
 
@@ -492,6 +494,258 @@ generators:
   CHECK(first.crops()[4].y == doctest::Approx(1.0));
   CHECK(first.crops()[20].x == doctest::Approx(1.0));
   CHECK(first.crops()[20].y == doctest::Approx(9.0));
+}
+
+TEST_CASE("bedded rows center complete beds and fixed-width crop lines") {
+  auto registry = cropsim::generators::make_builtin_generator_registry();
+  const auto generator = registry.fields().create("parallel_rows");
+  const cropsim::generators::FieldRegion field{
+      0U, {10.0, 5.0}, {{{0.0, 0.0}, {20.0, 0.0}, {20.0, 10.0}, {0.0, 10.0}}}};
+  const auto rows = generator->generate(YAML::Load(R"(
+orientation: 0
+headland: 0
+beds:
+  top_width: 1.8
+  center_spacing: 2.0
+  lines_per_bed: 6
+  wave: {amplitude: 0, wavelength: 100, phase: 0}
+)"),
+                                        field, {91U});
+
+  REQUIRE(rows.size() == 30U);
+  for (std::size_t index = 0; index < rows.size(); ++index) {
+    REQUIRE_FALSE(rows[index].path.empty());
+    REQUIRE(rows[index].crop_phase.has_value());
+    CHECK(*rows[index].crop_phase > 0.0);
+    CHECK(*rows[index].crop_phase < 1.0);
+    const auto bed = index / 6U;
+    const auto line = index % 6U;
+    const auto expected_y = 1.0 + 2.0 * static_cast<double>(bed) - 0.75 +
+                            0.3 * static_cast<double>(line);
+    CHECK(rows[index].row_spacing == doctest::Approx(0.3));
+    CHECK(rows[index].begin.x == doctest::Approx(0.0));
+    CHECK(rows[index].end.x == doctest::Approx(20.0));
+    CHECK(rows[index].begin.y == doctest::Approx(expected_y));
+    CHECK(rows[index].end.y == doctest::Approx(expected_y));
+  }
+  CHECK(rows[0].crop_phase != rows[1].crop_phase);
+}
+
+TEST_CASE("bedded rows follow configured sine geometry deterministically") {
+  auto registry = cropsim::generators::make_builtin_generator_registry();
+  const auto generator = registry.fields().create("parallel_rows");
+  const cropsim::generators::FieldRegion field{
+      0U, {50.0, 0.9}, {{{0.0, 0.0}, {100.0, 0.0}, {100.0, 1.8}, {0.0, 1.8}}}};
+  const auto node = YAML::Load(R"(
+orientation: 0
+headland: 0
+beds:
+  lines_per_bed: 1
+  wave: {amplitude: 0.2, wavelength: 100, phase: 0}
+)");
+  const auto first = generator->generate(node, field, {72U});
+  const auto second = generator->generate(node, field, {72U});
+  REQUIRE(first.size() == 1U);
+  REQUIRE(first.front().path.size() == second.front().path.size());
+  auto minimum = std::numeric_limits<double>::infinity();
+  auto maximum = -minimum;
+  for (std::size_t index = 0; index < first.front().path.size(); ++index) {
+    CHECK(first.front().path[index].x == second.front().path[index].x);
+    CHECK(first.front().path[index].y == second.front().path[index].y);
+    minimum = std::min(minimum, first.front().path[index].y);
+    maximum = std::max(maximum, first.front().path[index].y);
+  }
+  CHECK(first.front().begin.x == doctest::Approx(0.0));
+  CHECK(first.front().end.x == doctest::Approx(100.0));
+  CHECK(minimum == doctest::Approx(0.7));
+  CHECK(maximum == doctest::Approx(1.1));
+}
+
+TEST_CASE("bedded row phases are stable and domain-separated per bed") {
+  auto registry = cropsim::generators::make_builtin_generator_registry();
+  const auto generator = registry.fields().create("parallel_rows");
+  const cropsim::generators::FieldRegion field{
+      0U, {50.0, 2.0}, {{{0.0, 0.0}, {100.0, 0.0}, {100.0, 4.0}, {0.0, 4.0}}}};
+  const auto node = YAML::Load(R"(
+orientation: 0
+headland: 0
+beds:
+  lines_per_bed: 1
+  wave: {amplitude: 0.2, wavelength: 100, phase: random}
+)");
+  const auto first = generator->generate(node, field, {113U});
+  const auto second = generator->generate(node, field, {113U});
+  REQUIRE(first.size() == 2U);
+  REQUIRE(first[0].path.size() == second[0].path.size());
+  REQUIRE(first[1].path.size() == second[1].path.size());
+  for (std::size_t row = 0; row < first.size(); ++row) {
+    for (std::size_t point = 0; point < first[row].path.size(); ++point) {
+      CHECK(first[row].path[point].x == second[row].path[point].x);
+      CHECK(first[row].path[point].y == second[row].path[point].y);
+    }
+  }
+  const auto first_displacement =
+      first[0].path[first[0].path.size() / 2U].y - 1.0;
+  const auto second_displacement =
+      first[1].path[first[1].path.size() / 2U].y - 3.0;
+  CHECK(first_displacement != doctest::Approx(second_displacement));
+}
+
+TEST_CASE("lines on a curved bed retain local-normal spacing") {
+  auto registry = cropsim::generators::make_builtin_generator_registry();
+  const auto generator = registry.fields().create("parallel_rows");
+  const cropsim::generators::FieldRegion field{
+      0U, {50.0, 2.0}, {{{0.0, 0.0}, {100.0, 0.0}, {100.0, 4.0}, {0.0, 4.0}}}};
+  const auto rows = generator->generate(YAML::Load(R"(
+orientation: 0
+headland: 0
+beds:
+  top_width: 1.8
+  center_spacing: 4
+  lines_per_bed: 2
+  wave: {amplitude: 0.2, wavelength: 100, phase: 0}
+)"),
+                                        field, {15U});
+  REQUIRE(rows.size() == 2U);
+  const auto slope = -0.2 * 2.0 * std::acos(-1.0) / 100.0;
+  const auto inverse_length = 1.0 / std::hypot(1.0, slope);
+  const auto local_normal =
+      cropsim::generators::Point2{-slope * inverse_length, inverse_length};
+  const auto nearest = [](const std::vector<cropsim::generators::Point2> &path,
+                          const cropsim::generators::Point2 target) {
+    return *std::min_element(
+        path.begin(), path.end(), [&](const auto &left, const auto &right) {
+          return std::hypot(left.x - target.x, left.y - target.y) <
+                 std::hypot(right.x - target.x, right.y - target.y);
+        });
+  };
+  const auto lower = nearest(rows[0].path, {50.0 - 0.45 * local_normal.x,
+                                            2.0 - 0.45 * local_normal.y});
+  const auto upper = nearest(rows[1].path, {50.0 + 0.45 * local_normal.x,
+                                            2.0 + 0.45 * local_normal.y});
+  const auto dx = upper.x - lower.x;
+  const auto dy = upper.y - lower.y;
+  CHECK(std::hypot(dx, dy) == doctest::Approx(0.9));
+}
+
+TEST_CASE("bedded paths split deterministically across concave fields") {
+  auto registry = cropsim::generators::make_builtin_generator_registry();
+  const auto generator = registry.fields().create("parallel_rows");
+  const cropsim::generators::FieldRegion field{0U,
+                                               {10.0, 5.0},
+                                               {{{0.0, 0.0},
+                                                 {20.0, 0.0},
+                                                 {20.0, 10.0},
+                                                 {12.0, 10.0},
+                                                 {12.0, 4.0},
+                                                 {8.0, 4.0},
+                                                 {8.0, 10.0},
+                                                 {0.0, 10.0}}}};
+  const auto node = YAML::Load(R"(
+orientation: 0
+headland: 0
+beds:
+  wave: {amplitude: 0, wavelength: 100, phase: 0}
+)");
+  const auto first = generator->generate(node, field, {44U});
+  const auto second = generator->generate(node, field, {44U});
+  REQUIRE(first.size() > 30U);
+  REQUIRE(first.size() == second.size());
+  auto found_split = false;
+  for (std::size_t index = 0; index < first.size(); ++index) {
+    CHECK(first[index].row_index == second[index].row_index);
+    CHECK(first[index].begin.x == second[index].begin.x);
+    CHECK(first[index].begin.y == second[index].begin.y);
+    CHECK(first[index].end.x == second[index].end.x);
+    CHECK(first[index].end.y == second[index].end.y);
+    if (index > 0U && first[index - 1U].row_index == first[index].row_index) {
+      found_split = true;
+    }
+  }
+  CHECK(found_split);
+}
+
+TEST_CASE("linear rows meter crops by curved path arc length") {
+  auto registry = cropsim::generators::make_builtin_generator_registry();
+  const auto generator = registry.rows().create("linear");
+  const cropsim::generators::Polygon2 boundary{
+      {{-1.0, -1.0}, {11.0, -1.0}, {11.0, 11.0}, {-1.0, 11.0}}};
+  const cropsim::generators::RowSegment row{
+      0U,
+      0U,
+      {0.0, 0.0},
+      {10.0, 10.0},
+      boundary,
+      1.0,
+      {{0.0, 0.0}, {10.0, 0.0}, {10.0, 10.0}}, {}};
+  const auto positions = generator->generate(
+      YAML::Load("{crop_spacing: 4, along_jitter: 0, cross_jitter: 0}"), row,
+      {31U});
+  const std::vector<cropsim::generators::Point2> expected{
+      {2.0, 0.0}, {6.0, 0.0}, {10.0, 0.0}, {10.0, 4.0}, {10.0, 8.0}};
+  REQUIRE(positions.size() == expected.size());
+  for (std::size_t index = 0; index < positions.size(); ++index) {
+    CHECK(positions[index].x == doctest::Approx(expected[index].x));
+    CHECK(positions[index].y == doctest::Approx(expected[index].y));
+  }
+  CHECK(generator->generate(YAML::Load("{}"), row, {31U}).size() == 100U);
+}
+
+TEST_CASE("bedded crop lines have independent deterministic crop phases") {
+  auto registry = cropsim::generators::make_builtin_generator_registry();
+  const auto field_generator = registry.fields().create("parallel_rows");
+  const auto row_generator = registry.rows().create("linear");
+  const cropsim::generators::FieldRegion field{
+      0U, {10.0, 0.9}, {{{0.0, 0.0}, {20.0, 0.0}, {20.0, 1.8}, {0.0, 1.8}}}};
+  const auto field_node = YAML::Load(R"(
+orientation: 0
+headland: 0
+beds:
+  lines_per_bed: 2
+  wave: {amplitude: 0, wavelength: 100, phase: 0}
+)");
+  const auto first = field_generator->generate(field_node, field, {812U});
+  const auto second = field_generator->generate(field_node, field, {812U});
+  REQUIRE(first.size() == 2U);
+  REQUIRE(second.size() == first.size());
+  REQUIRE(first[0].crop_phase.has_value());
+  REQUIRE(first[1].crop_phase.has_value());
+  CHECK(first[0].crop_phase == second[0].crop_phase);
+  CHECK(first[1].crop_phase == second[1].crop_phase);
+  CHECK(first[0].crop_phase != first[1].crop_phase);
+
+  const auto row_node = YAML::Load(
+      "{crop_spacing: 4, along_jitter: 0, cross_jitter: 0}");
+  const auto lower = row_generator->generate(row_node, first[0], {1U});
+  const auto upper = row_generator->generate(row_node, first[1], {2U});
+  REQUIRE(lower.size() == 5U);
+  REQUIRE(upper.size() == 5U);
+  CHECK(lower[0].x == doctest::Approx(*first[0].crop_phase * 4.0));
+  CHECK(upper[0].x == doctest::Approx(*first[1].crop_phase * 4.0));
+  CHECK(lower[0].x != doctest::Approx(upper[0].x));
+  for (std::size_t index = 1; index < lower.size(); ++index) {
+    CHECK(lower[index].x - lower[index - 1U].x == doctest::Approx(4.0));
+    CHECK(upper[index].x - upper[index - 1U].x == doctest::Approx(4.0));
+  }
+}
+
+TEST_CASE("bedded rows reject conflicting and invalid parameters") {
+  auto registry = cropsim::generators::make_builtin_generator_registry();
+  const auto generator = registry.fields().create("parallel_rows");
+  const cropsim::generators::FieldRegion field{
+      0U, {5.0, 5.0}, {{{0.0, 0.0}, {10.0, 0.0}, {10.0, 10.0}, {0.0, 10.0}}}};
+  const auto invalid = [&](const std::string_view yaml) {
+    CHECK_THROWS(
+        generator->generate(YAML::Load(std::string(yaml)), field, {1U}));
+  };
+  invalid("{orientation: 0, headland: 0, row_spacing: 1, beds: {}}");
+  invalid("{orientation: 0, headland: 0, beds: {lines_per_bed: 0}}");
+  invalid("{orientation: 0, headland: 0, beds: {lines_per_bed: 11}}");
+  invalid(
+      "{orientation: 0, headland: 0, beds: {top_width: 2, center_spacing: 1}}");
+  invalid("{orientation: 0, headland: 0, beds: {wave: {amplitude: -1}}}");
+  invalid("{orientation: 0, headland: 0, beds: {wave: {wavelength: 0}}}");
+  invalid("{orientation: 0, headland: 0, beds: {wave: {wavelength: 1e-9}}}");
 }
 
 TEST_CASE("field-set roads have exact width and preserve domain edges") {

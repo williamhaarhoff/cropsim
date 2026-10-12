@@ -197,7 +197,7 @@ Acceptance criteria:
 - Reporting benchmarks cover 10, 100, and 500 fields plus large crop counts without wall-clock correctness thresholds.
 - The library, viewer and shaders, complete test suite, and benchmark target build successfully through CMake and the Nix flake.
 
-# Current milestone
+# Past milestone
 
 Goal: Add transient named scalar modifier fields to field sets so crop morphology can vary by
 position without changing `World` or snapshot v3. Compile fields once, reuse an allocation-free
@@ -219,3 +219,51 @@ Architecture and acceptance criteria:
 - Document and test expressions, dependencies, noise, hotspots, every binding operation, clamps,
   rounding, correlation, registry extensibility, diagnostics, compatibility, and million-crop
   reporting benchmarks. Modifier definitions and caches remain transient and field-set-only.
+
+# Current milestone
+
+Goal: Extend `parallel_rows` with opt-in, transient bed-aware crop-line generation. Model planter
+beds with fixed centre spacing, a fixed number of equally spaced lines across each bed top, and
+shallow sinusoidal steering. Meter crops at equal arc-length spacing along the resulting curves
+without changing `World`, snapshot v3, or any legacy generator output.
+
+Architecture and YAML:
+- Preserve the existing `parallel_rows` path byte-for-byte when `beds` is absent. Add a nested
+  `beds` mapping with defaults: 1.8 m `top_width`, 2.0 m `center_spacing`, six
+  `lines_per_bed`, and a wave with 0.2 m peak `amplitude`, 100 m `wavelength`, and a stable
+  domain-separated random phase per bed. A finite numeric phase overrides random phase; zero
+  amplitude creates straight beds.
+- Derive line spacing as `top_width / lines_per_bed` and centre the lines with half-spacing bed-edge
+  margins. Require 1--10 lines, positive finite dimensions and wavelength, nonnegative finite
+  amplitude, and centre spacing at least the bed-top width. Reject `row_spacing` and `row_jitter`
+  when `beds` is present.
+- Apply the existing field orientation, orientation offset, and headland. Fit and centre complete
+  bed tops from the plantable component width; total line count remains geometry-derived.
+- Represent curved generated lines as optional transient polylines on `RowSegment`. Empty paths
+  retain the straight begin/end contract for legacy and custom generators. Sample sine curves at
+  64 segments per wavelength, clip them deterministically to the plantable polygon, and bound all
+  generated resources.
+- Offset every line in a bed from one shared bed curve along its local normal, preserving fixed
+  spacing through bends. Give every bed a stable phase stream without perturbing existing streams,
+  sibling layouts, morphology, ordering, or IDs.
+- Give each crop line a stable, domain-separated crop-position phase. Shift its equally spaced crop
+  train within the available end slack without changing the shared bed wave, line spacing, crop
+  spacing, or independent per-crop jitter.
+- Update the linear row generator to place crops with equal end margins at equal arc-length
+  intervals along curved paths. Keep its exact straight implementation for empty paths and apply
+  optional crop jitter in the local tangent/normal frame.
+
+Acceptance criteria:
+- A rectangular fixture produces centred 1.8 m bed tops at 2.0 m centre spacing and six lines per
+  bed at 0.3 m perpendicular spacing.
+- Curves have deterministic per-bed phases, configurable numeric phase, the requested wavelength
+  and peak amplitude, local-normal line offsets, canonical clipping and stable ordering.
+- Crop spacing defaults to the existing legacy value outside bed mode and to 0.2 m (200 mm) for
+  curved bed paths, measured along curve arc length. Each line has a deterministic independent crop
+  phase while preserving exact successive-crop spacing.
+- Concave fields, headlands, split paths, short fields, containment, invalid parameters, conflicts,
+  overflow, and resource exhaustion are covered by tests.
+- Existing explicit crops, grid and hierarchical YAML, custom registry injection, random draw
+  order, snapshot v3 bytes, viewer and renderer behaviour remain unchanged.
+- Documentation includes the new schema and explains that typical 100 m+ line length and 20--100
+  total crop lines are guidance determined by field geometry rather than enforced limits.

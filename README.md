@@ -124,6 +124,41 @@ long axis of the field's minimum-area oriented bounding box and may instead be a
 The outer polygon may be concave but cannot contain holes or self-intersections. Crop centers are
 kept inside the headland-adjusted field; leaf geometry may extend beyond it.
 
+For planter-shaped fields, `parallel_rows` also supports an opt-in `beds` mapping. Bed tops are
+centred across the plantable field, and all lines on one bed share a shallow steering wave while
+remaining at fixed perpendicular spacing:
+
+```yaml
+field:
+  gentype: parallel_rows
+  orientation: auto
+  headland: 0.5
+  beds:
+    top_width: 1.8
+    center_spacing: 2.0
+    lines_per_bed: 6
+    wave:
+      amplitude: 0.2
+      wavelength: 100.0
+      phase: random
+  row:
+    gentype: linear
+    crop_spacing: 0.2
+    crop: {gentype: generic}
+```
+
+These are the bed-mode defaults: six lines give 0.3 m line spacing and half-spacing margins on a
+1.8 m bed top. Every bed receives its own deterministic random phase, while all lines planted on
+that bed remain fixed offsets from the shared path. Amplitude is peak displacement in metres, so
+`0.2` ranges from -0.2 m to +0.2 m. `phase` may instead be a numeric angle in radians, and zero
+amplitude produces straight beds. Each crop line also receives an independent deterministic crop
+phase, shifting its first crop within the available end margin while retaining exact along-line
+spacing. This crop phase is separate from both the shared bed wave phase and per-crop jitter.
+Crop spacing defaults to `0.2` m (200 mm) and is measured along the curved path. Field geometry determines the
+number and length of lines—20--100 total lines and lengths above 100 m are typical guidance, not
+enforced limits. `row_spacing` and `row_jitter` belong to legacy row mode and cannot be combined
+with `beds`.
+
 The field hierarchy uses stable, domain-separated random streams. Changing crop geometry or the
 number of crops in one row does not change the field and row layouts of its siblings. World crop
 IDs remain sequential in canonical field, row, segment, and crop order.
