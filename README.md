@@ -124,6 +124,18 @@ long axis of the field's minimum-area oriented bounding box and may instead be a
 The outer polygon may be concave but cannot contain holes or self-intersections. Crop centers are
 kept inside the headland-adjusted field; leaf geometry may extend beyond it.
 
+### Farm landscapes
+
+`gentype: farm_landscape` uses the same required nested `field`/`row`/`crop` hierarchy, but lays
+out an exact number of deterministic parcels around a boundary-to-boundary lane and transient
+access tracks. `terrain` (`relief`, `scale`), `infrastructure` (`lane_width`, `track_width`,
+`curvature`), and `parcels` (`area_variation`, `boundary_irregularity`, `minimum_area`,
+`minimum_width`) are optional mappings; see `examples/farm_landscape.yaml`. A count of one omits
+the through-lane. Terrain, corridors, access, hedges, ditches, and cadastral boundaries are layout
+metadata only and never enter `World` or snapshot v3. The public landscape API can produce a
+labeled grayscale/terminal preview or deterministic SVG. Typical 100 m or longer rows and 20--100
+crop lines are guidance arising from field geometry, not enforced limits.
+
 For planter-shaped fields, `parallel_rows` supports an opt-in `planting` mapping. Bed tops are
 centred across the plantable field, and all lines on one bed share a shallow steering wave while
 remaining at fixed perpendicular spacing:

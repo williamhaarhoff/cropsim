@@ -2,6 +2,7 @@
 
 #include "cropsim/generators/generator_registry.hpp"
 #include "cropsim/modifiers/modifier_fields.hpp"
+#include "cropsim/generators/landscape.hpp"
 #include "geometry.hpp"
 
 #include <algorithm>
@@ -355,6 +356,14 @@ VoronoiFieldSetGenerator::generate_fields(const YAML::Node &node,
 void register_builtin_field_set_generators(PlacementGeneratorFactory &factory) {
   factory.register_generator(
       "field_set", [] { return std::make_unique<VoronoiFieldSetGenerator>(); });
+  factory.register_generator(
+      "farm_landscape", [] { return std::make_unique<FarmLandscapeGenerator>(); });
+}
+
+std::vector<FieldRegion>
+FarmLandscapeGenerator::generate_fields(const YAML::Node &node,
+                                        const GenerationKey key) const {
+  return generate_landscape_layout(node, key).fields;
 }
 
 } // namespace cropsim::generators

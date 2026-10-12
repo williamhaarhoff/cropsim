@@ -1,0 +1,25 @@
+seed: 568616
+generators:
+  - gentype: farm_landscape
+    bounds: [[0, 0], [220, 0], [220, 190], [0, 190]]
+    count: 12
+    terrain: {relief: 8.0, scale: 250.0}
+    infrastructure: {lane_width: 4.0, track_width: 2.5, curvature: 0.65}
+    parcels: {area_variation: 0.6, boundary_irregularity: 0.25}
+    field:
+      gentype: parallel_rows
+      headland: 3.5
+      planting:
+        center_spacing: 2.0
+        lines_per_bed: [7,7,7]
+        top_width: 1.8
+        wave: {amplitude: 0.0}
+      row:
+        gentype: linear
+        crop_spacing: 0.25
+        along_jitter: 0.05
+        aross_jitter: 0.03
+        crop: 
+          gentype: generic
+          leaf_num: {min: 4, mean: 5}
+        

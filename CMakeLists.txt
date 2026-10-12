@@ -18,6 +18,7 @@ add_library(cropsim
     src/generators/generator_registry.cpp
     src/generators/crop_generators.cpp
     src/generators/field_set_generators.cpp
+    src/generators/landscape.cpp
     src/generators/geometry.cpp
     src/generators/placement_generators.cpp
     src/generators/row_generators.cpp
@@ -49,7 +50,7 @@ if(CROPSIM_BUILD_TESTS)
     enable_testing()
     find_package(doctest REQUIRED)
     add_executable(cropsim_tests tests/world_tests.cpp tests/terminal_image_tests.cpp
-        tests/modifier_field_tests.cpp)
+        tests/modifier_field_tests.cpp tests/landscape_tests.cpp)
     target_link_libraries(cropsim_tests PRIVATE cropsim::cropsim doctest::doctest)
     target_compile_definitions(cropsim_tests PRIVATE
         CROPSIM_TEST_ARTIFACT_DIR="${CMAKE_CURRENT_BINARY_DIR}/test-artifacts"

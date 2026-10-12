@@ -33,6 +33,12 @@ protected:
   generate_fields(const YAML::Node &, GenerationKey) const override;
 };
 
+class FarmLandscapeGenerator final : public FieldSetGenerator {
+protected:
+  [[nodiscard]] std::vector<FieldRegion>
+  generate_fields(const YAML::Node &, GenerationKey) const override;
+};
+
 class ParallelRowFieldGenerator final : public FieldGenerator {
 public:
   [[nodiscard]] std::vector<RowSegment> generate(const YAML::Node &,
