@@ -44,6 +44,55 @@ struct ProjectedBounds final {
   double max_across{-std::numeric_limits<double>::infinity()};
 };
 
+struct PlantingConfig final {
+  std::vector<std::size_t> lines_per_bed;
+  double gps_lateral_offset{};
+};
+
+PlantingConfig planting_config(const YAML::Node &planting) {
+  if (!planting.IsMap()) {
+    throw std::invalid_argument("planting must be a map");
+  }
+  if (planting["rows_per_pass"]) {
+    throw std::invalid_argument(
+        "rows_per_pass has been replaced by the lines_per_bed list length");
+  }
+  const auto configured_lines = planting["lines_per_bed"];
+  std::vector<std::size_t> lines_per_bed;
+  if (!configured_lines) {
+    lines_per_bed.push_back(6U);
+  } else {
+    if (!configured_lines.IsSequence() || configured_lines.size() == 0U) {
+      throw std::invalid_argument("lines_per_bed must be a non-empty list");
+    }
+    lines_per_bed.reserve(configured_lines.size());
+    for (const auto &value : configured_lines) {
+      const auto count = value.as<std::size_t>();
+      if (count == 0U || count > 10U) {
+        throw std::invalid_argument("lines_per_bed values must be from 1 to 10");
+      }
+      lines_per_bed.push_back(count);
+    }
+  }
+  const auto gps_lateral_offset =
+      planting["gps_lateral_offset"]
+          ? planting["gps_lateral_offset"].as<double>()
+          : 0.0;
+  if (!std::isfinite(gps_lateral_offset)) {
+    throw std::invalid_argument("invalid planting parameters");
+  }
+  return {std::move(lines_per_bed), gps_lateral_offset};
+}
+
+double planting_offset(const PlantingConfig &config,
+                       const std::size_t pass_index) {
+  if (config.gps_lateral_offset == 0.0) {
+    return 0.0;
+  }
+  return pass_index % 2U == 0U ? config.gps_lateral_offset
+                               : -config.gps_lateral_offset;
+}
+
 ProjectedBounds projected_bounds(const Polygon2 &polygon,
                                  const Point2 direction, const Point2 normal) {
   ProjectedBounds bounds;
@@ -93,26 +142,26 @@ std::vector<Point2> sine_line(const Point2 direction, const Point2 normal,
   return result;
 }
 
-std::vector<RowSegment> generate_bedded_rows(const YAML::Node &node,
-                                             const FieldRegion &field,
-                                             const GenerationKey key,
-                                             const double headland,
-                                             double angle) {
+std::vector<RowSegment>
+generate_bedded_rows(const YAML::Node &node, const FieldRegion &field,
+                     const GenerationKey key, const double headland,
+                     double angle) {
   if (node["row_spacing"] || node["row_jitter"]) {
     throw std::invalid_argument(
-        "beds cannot be combined with row_spacing or row_jitter");
+        "planting cannot be combined with row_spacing or row_jitter");
   }
-  auto beds = node["beds"];
-  if (!beds.IsMap()) {
-    throw std::invalid_argument("beds must be a map");
+  const auto planting_node = node["planting"];
+  if (!planting_node.IsMap()) {
+    throw std::invalid_argument("planting must be a map");
   }
+  const auto planting = planting_config(planting_node);
   const auto top_width =
-      beds["top_width"] ? beds["top_width"].as<double>() : 1.8;
+      planting_node["top_width"] ? planting_node["top_width"].as<double>() : 1.8;
   const auto center_spacing =
-      beds["center_spacing"] ? beds["center_spacing"].as<double>() : 2.0;
-  const auto lines_per_bed =
-      beds["lines_per_bed"] ? beds["lines_per_bed"].as<std::size_t>() : 6U;
-  auto wave = beds["wave"];
+      planting_node["center_spacing"]
+          ? planting_node["center_spacing"].as<double>()
+          : 2.0;
+  auto wave = planting_node["wave"];
   if (wave && !wave.IsMap()) {
     throw std::invalid_argument("bed wave must be a map");
   }
@@ -136,8 +185,8 @@ std::vector<RowSegment> generate_bedded_rows(const YAML::Node &node,
   }
   if (!std::isfinite(top_width) || top_width <= 0.0 ||
       !std::isfinite(center_spacing) || center_spacing < top_width ||
-      lines_per_bed == 0U || lines_per_bed > 10U || !std::isfinite(amplitude) ||
-      amplitude < 0.0 || !std::isfinite(wavelength) || wavelength <= 0.0 ||
+      !std::isfinite(amplitude) || amplitude < 0.0 ||
+      !std::isfinite(wavelength) || wavelength <= 0.0 ||
       !std::isfinite(explicit_phase)) {
     throw std::invalid_argument("invalid bed parameters");
   }
@@ -149,7 +198,6 @@ std::vector<RowSegment> generate_bedded_rows(const YAML::Node &node,
   if (plantable.empty()) {
     throw std::runtime_error("field headland leaves no plantable area");
   }
-  const auto line_spacing = top_width / static_cast<double>(lines_per_bed);
   std::vector<RowSegment> result;
   std::uint64_t row_index = 0U;
   std::uint64_t bed_index = 0U;
@@ -167,7 +215,7 @@ std::vector<RowSegment> generate_bedded_rows(const YAML::Node &node,
       throw std::overflow_error("field bed count overflow");
     }
     const auto bed_count = static_cast<std::size_t>(raw_count);
-    if (bed_count > result.max_size() / lines_per_bed) {
+    if (bed_count > result.max_size() / 10U) {
       throw std::overflow_error("field bed line count overflow");
     }
     const auto occupied = static_cast<double>(bed_count - 1U) * center_spacing;
@@ -178,6 +226,11 @@ std::vector<RowSegment> generate_bedded_rows(const YAML::Node &node,
     const auto first = bounds.min_along - extension;
     const auto last = bounds.max_along + extension;
     for (std::size_t bed = 0; bed < bed_count; ++bed, ++bed_index) {
+      const auto lines_per_bed =
+          planting.lines_per_bed[bed % planting.lines_per_bed.size()];
+      const auto line_spacing =
+          top_width / static_cast<double>(lines_per_bed);
+      const auto pass_index = bed / planting.lines_per_bed.size();
       const auto bed_across =
           first_bed + static_cast<double>(bed) * center_spacing;
       auto phase_stream =
@@ -188,8 +241,11 @@ std::vector<RowSegment> generate_bedded_rows(const YAML::Node &node,
         if (row_index == std::numeric_limits<std::uint64_t>::max()) {
           throw std::overflow_error("field row index overflow");
         }
-        const auto line_offset =
+        auto line_offset =
             (static_cast<double>(line) + 0.5) * line_spacing - top_width / 2.0;
+        if (planting.gps_lateral_offset != 0.0) {
+          line_offset += planting_offset(planting, pass_index);
+        }
         const auto path = sine_line(direction, normal, first, last, bed_across,
                                     line_offset, amplitude, wavelength, phase);
         auto crop_phase_stream =
@@ -218,12 +274,15 @@ std::vector<RowSegment>
 ParallelRowFieldGenerator::generate(const YAML::Node &node,
                                     const FieldRegion &field,
                                     const GenerationKey key) const {
+  if (node["beds"]) {
+    throw std::invalid_argument("beds has been replaced by planting");
+  }
   const auto headland = node["headland"] ? node["headland"].as<double>() : 0.5;
   const auto offset = node["orientation_offset"]
                           ? node["orientation_offset"].as<double>()
                           : 0.0;
   auto angle = orientation(node, field.boundary);
-  if (node["beds"]) {
+  if (node["planting"]) {
     if (!std::isfinite(headland) || headland < 0.0 || !std::isfinite(angle) ||
         !std::isfinite(offset)) {
       throw std::invalid_argument("invalid parallel-row field parameters");
@@ -275,8 +334,8 @@ ParallelRowFieldGenerator::generate(const YAML::Node &node,
     const auto extension = std::max(spacing, max_along - min_along);
     for (std::size_t index = 0; index < count; ++index) {
       auto stream = RandomStream(key.child(row_jitter_domain, row_index).value);
-      const auto across = start + static_cast<double>(index) * spacing +
-                          stream.symmetric_unit() * jitter;
+      auto across = start + static_cast<double>(index) * spacing +
+                    stream.symmetric_unit() * jitter;
       const Point2 begin{
           direction.x * (min_along - extension) + normal.x * across,
           direction.y * (min_along - extension) + normal.y * across};

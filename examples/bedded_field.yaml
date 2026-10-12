@@ -2,19 +2,20 @@ seed: 568616
 generators:
   - gentype: field_set
     bounds: [[0, 0], [120, 0], [120, 20], [0, 20]]
-    count: 20
+    count: 1
     road_width: 2.0
     seed_jitter: 1
     field:
       gentype: parallel_rows
       # orientation: 
       headland: 0.5
-      beds:
+      planting:
         top_width: 1.8
         center_spacing: 2.0
-        lines_per_bed: 6
+        lines_per_bed: [7, 4, 7]
+        gps_lateral_offset: 0.10
         wave:
-          amplitude: 0.1
+          amplitude: 0.0
           wavelength: 100.0
           phase: random
       row:

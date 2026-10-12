@@ -94,7 +94,7 @@ generators:
       gentype: parallel_rows
       orientation: 0
       headland: 0
-      beds: {top_width: 1.8, center_spacing: 2, lines_per_bed: 6}
+      planting: {top_width: 1.8, center_spacing: 2, lines_per_bed: [6]}
       row:
         gentype: linear
         crop_spacing: 0.2

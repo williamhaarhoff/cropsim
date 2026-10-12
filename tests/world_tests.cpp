@@ -3,6 +3,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -496,6 +497,48 @@ generators:
   CHECK(first.crops()[20].y == doctest::Approx(9.0));
 }
 
+TEST_CASE("zero planting offset preserves snapshot bytes") {
+  constexpr std::string_view baseline = R"(
+seed: 77
+generators:
+  - gentype: field_set
+    bounds: [[0, 0], [10, 0], [10, 4], [0, 4]]
+    count: 1
+    road_width: 0
+    seed_jitter: 0
+    field:
+      gentype: parallel_rows
+      orientation: 0
+      headland: 0
+      planting: {lines_per_bed: [2], wave: {amplitude: 0, phase: 0}}
+      row:
+        gentype: linear
+        crop_spacing: 1
+        crop: {gentype: fixed, radius: 0.1}
+)";
+  constexpr std::string_view configured = R"(
+seed: 77
+generators:
+  - gentype: field_set
+    bounds: [[0, 0], [10, 0], [10, 4], [0, 4]]
+    count: 1
+    road_width: 0
+    seed_jitter: 0
+    field:
+      gentype: parallel_rows
+      orientation: 0
+      headland: 0
+      planting: {lines_per_bed: [2], gps_lateral_offset: 0,
+                 wave: {amplitude: 0, phase: 0}}
+      row:
+        gentype: linear
+        crop_spacing: 1
+        crop: {gentype: fixed, radius: 0.1}
+)";
+  CHECK(cropsim::serialise_snapshot(cropsim::world_from_yaml(baseline)) ==
+        cropsim::serialise_snapshot(cropsim::world_from_yaml(configured)));
+}
+
 TEST_CASE("bedded rows center complete beds and fixed-width crop lines") {
   auto registry = cropsim::generators::make_builtin_generator_registry();
   const auto generator = registry.fields().create("parallel_rows");
@@ -504,10 +547,10 @@ TEST_CASE("bedded rows center complete beds and fixed-width crop lines") {
   const auto rows = generator->generate(YAML::Load(R"(
 orientation: 0
 headland: 0
-beds:
+planting:
   top_width: 1.8
   center_spacing: 2.0
-  lines_per_bed: 6
+  lines_per_bed: [6]
   wave: {amplitude: 0, wavelength: 100, phase: 0}
 )"),
                                         field, {91U});
@@ -531,6 +574,70 @@ beds:
   CHECK(rows[0].crop_phase != rows[1].crop_phase);
 }
 
+TEST_CASE("line-count lists define planting passes and partial remainders") {
+  auto registry = cropsim::generators::make_builtin_generator_registry();
+  const auto generator = registry.fields().create("parallel_rows");
+  const cropsim::generators::FieldRegion field{
+      0U, {10.0, 4.0}, {{{0.0, 0.0}, {20.0, 0.0}, {20.0, 8.0}, {0.0, 8.0}}}};
+  const auto rows = generator->generate(YAML::Load(R"(
+orientation: 0
+headland: 0
+planting:
+  top_width: 1.8
+  center_spacing: 2
+  lines_per_bed: [7, 6, 7]
+  gps_lateral_offset: 0.1
+  wave: {amplitude: 0, wavelength: 100, phase: 0}
+)"),
+                                        field, {8U});
+
+  REQUIRE(rows.size() == 27U);
+  const std::array<std::size_t, 4U> starts{0U, 7U, 13U, 20U};
+  const std::array<std::size_t, 4U> counts{7U, 6U, 7U, 7U};
+  for (std::size_t bed = 0; bed < counts.size(); ++bed) {
+    const auto spacing = 1.8 / static_cast<double>(counts[bed]);
+    const auto pass_offset = bed < 3U ? 0.1 : -0.1;
+    const auto center = 1.0 + 2.0 * static_cast<double>(bed);
+    for (std::size_t line = 0; line < counts[bed]; ++line) {
+      const auto &row = rows[starts[bed] + line];
+      const auto expected = center + pass_offset - 0.9 +
+                            (static_cast<double>(line) + 0.5) * spacing;
+      CHECK(row.row_spacing == doctest::Approx(spacing));
+      CHECK(row.begin.y == doctest::Approx(expected));
+      CHECK(row.end.y == doctest::Approx(expected));
+    }
+  }
+}
+
+TEST_CASE("bedded GPS offsets follow the shared curve local normal") {
+  auto registry = cropsim::generators::make_builtin_generator_registry();
+  const auto generator = registry.fields().create("parallel_rows");
+  const cropsim::generators::FieldRegion field{
+      0U, {50.0, 0.9}, {{{0.0, 0.0}, {100.0, 0.0}, {100.0, 1.8}, {0.0, 1.8}}}};
+  const auto rows = generator->generate(YAML::Load(R"(
+orientation: 0
+headland: 0
+planting:
+  lines_per_bed: [1]
+  gps_lateral_offset: 0.1
+  wave: {amplitude: 0.2, wavelength: 100, phase: 0}
+)"),
+                                        field, {9U});
+  REQUIRE(rows.size() == 1U);
+  const auto slope = -0.2 * 2.0 * std::acos(-1.0) / 100.0;
+  const auto inverse_length = 1.0 / std::hypot(1.0, slope);
+  const cropsim::generators::Point2 expected{
+      50.0 - slope * inverse_length * 0.1, 0.9 + inverse_length * 0.1};
+  const auto nearest = *std::min_element(
+      rows.front().path.begin(), rows.front().path.end(),
+      [&](const auto &left, const auto &right) {
+        return std::hypot(left.x - expected.x, left.y - expected.y) <
+               std::hypot(right.x - expected.x, right.y - expected.y);
+      });
+  CHECK(nearest.x == doctest::Approx(expected.x));
+  CHECK(nearest.y == doctest::Approx(expected.y));
+}
+
 TEST_CASE("bedded rows follow configured sine geometry deterministically") {
   auto registry = cropsim::generators::make_builtin_generator_registry();
   const auto generator = registry.fields().create("parallel_rows");
@@ -539,8 +646,8 @@ TEST_CASE("bedded rows follow configured sine geometry deterministically") {
   const auto node = YAML::Load(R"(
 orientation: 0
 headland: 0
-beds:
-  lines_per_bed: 1
+planting:
+  lines_per_bed: [1]
   wave: {amplitude: 0.2, wavelength: 100, phase: 0}
 )");
   const auto first = generator->generate(node, field, {72U});
@@ -569,8 +676,8 @@ TEST_CASE("bedded row phases are stable and domain-separated per bed") {
   const auto node = YAML::Load(R"(
 orientation: 0
 headland: 0
-beds:
-  lines_per_bed: 1
+planting:
+  lines_per_bed: [1]
   wave: {amplitude: 0.2, wavelength: 100, phase: random}
 )");
   const auto first = generator->generate(node, field, {113U});
@@ -599,10 +706,10 @@ TEST_CASE("lines on a curved bed retain local-normal spacing") {
   const auto rows = generator->generate(YAML::Load(R"(
 orientation: 0
 headland: 0
-beds:
+planting:
   top_width: 1.8
   center_spacing: 4
-  lines_per_bed: 2
+  lines_per_bed: [2]
   wave: {amplitude: 0.2, wavelength: 100, phase: 0}
 )"),
                                         field, {15U});
@@ -644,7 +751,7 @@ TEST_CASE("bedded paths split deterministically across concave fields") {
   const auto node = YAML::Load(R"(
 orientation: 0
 headland: 0
-beds:
+planting:
   wave: {amplitude: 0, wavelength: 100, phase: 0}
 )");
   const auto first = generator->generate(node, field, {44U});
@@ -700,8 +807,8 @@ TEST_CASE("bedded crop lines have independent deterministic crop phases") {
   const auto field_node = YAML::Load(R"(
 orientation: 0
 headland: 0
-beds:
-  lines_per_bed: 2
+planting:
+  lines_per_bed: [2]
   wave: {amplitude: 0, wavelength: 100, phase: 0}
 )");
   const auto first = field_generator->generate(field_node, field, {812U});
@@ -738,14 +845,22 @@ TEST_CASE("bedded rows reject conflicting and invalid parameters") {
     CHECK_THROWS(
         generator->generate(YAML::Load(std::string(yaml)), field, {1U}));
   };
-  invalid("{orientation: 0, headland: 0, row_spacing: 1, beds: {}}");
-  invalid("{orientation: 0, headland: 0, beds: {lines_per_bed: 0}}");
-  invalid("{orientation: 0, headland: 0, beds: {lines_per_bed: 11}}");
+  invalid("{orientation: 0, headland: 0, beds: {}}");
+  invalid("{orientation: 0, headland: 0, row_spacing: 1, planting: {}}");
+  invalid("{orientation: 0, headland: 0, planting: {lines_per_bed: 6}}");
+  invalid("{orientation: 0, headland: 0, planting: {lines_per_bed: []}}");
+  invalid("{orientation: 0, headland: 0, planting: {lines_per_bed: [0]}}");
+  invalid("{orientation: 0, headland: 0, planting: {lines_per_bed: [11]}}");
   invalid(
-      "{orientation: 0, headland: 0, beds: {top_width: 2, center_spacing: 1}}");
-  invalid("{orientation: 0, headland: 0, beds: {wave: {amplitude: -1}}}");
-  invalid("{orientation: 0, headland: 0, beds: {wave: {wavelength: 0}}}");
-  invalid("{orientation: 0, headland: 0, beds: {wave: {wavelength: 1e-9}}}");
+      "{orientation: 0, headland: 0, planting: {top_width: 2, center_spacing: 1}}");
+  invalid("{orientation: 0, headland: 0, planting: {wave: {amplitude: -1}}}");
+  invalid("{orientation: 0, headland: 0, planting: {wave: {wavelength: 0}}}");
+  invalid(
+      "{orientation: 0, headland: 0, planting: {wave: {wavelength: 1e-9}}}");
+  invalid("{orientation: 0, headland: 0, planting: 1}");
+  invalid("{orientation: 0, headland: 0, planting: {rows_per_pass: 3}}");
+  invalid(
+      "{orientation: 0, headland: 0, planting: {gps_lateral_offset: .inf}}");
 }
 
 TEST_CASE("field-set roads have exact width and preserve domain edges") {

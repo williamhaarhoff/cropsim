@@ -124,7 +124,7 @@ long axis of the field's minimum-area oriented bounding box and may instead be a
 The outer polygon may be concave but cannot contain holes or self-intersections. Crop centers are
 kept inside the headland-adjusted field; leaf geometry may extend beyond it.
 
-For planter-shaped fields, `parallel_rows` also supports an opt-in `beds` mapping. Bed tops are
+For planter-shaped fields, `parallel_rows` supports an opt-in `planting` mapping. Bed tops are
 centred across the plantable field, and all lines on one bed share a shallow steering wave while
 remaining at fixed perpendicular spacing:
 
@@ -133,10 +133,11 @@ field:
   gentype: parallel_rows
   orientation: auto
   headland: 0.5
-  beds:
+  planting:
     top_width: 1.8
     center_spacing: 2.0
-    lines_per_bed: 6
+    lines_per_bed: [7, 6, 7]
+    gps_lateral_offset: 0.03
     wave:
       amplitude: 0.2
       wavelength: 100.0
@@ -147,9 +148,13 @@ field:
     crop: {gentype: generic}
 ```
 
-These are the bed-mode defaults: six lines give 0.3 m line spacing and half-spacing margins on a
-1.8 m bed top. Every bed receives its own deterministic random phase, while all lines planted on
-that bed remain fixed offsets from the shared path. Amplitude is peak displacement in metres, so
+`lines_per_bed` is a non-empty list whose length is the number of beds planted in one pass and
+whose values are the crop-line counts on those beds. Thus `[7, 6, 7]` plants three beds per pass
+with seven, six, and seven lines; `[7, 7, 7]` plants seven lines on each of three beds. The pattern
+repeats across the field, and a final partial pass uses its corresponding prefix. The default is
+`[6]`, giving six lines at 0.3 m spacing and half-spacing margins on the default 1.8 m bed top.
+Every bed receives its own deterministic random phase, while all lines planted on that bed remain
+fixed offsets from the shared path. Amplitude is peak displacement in metres, so
 `0.2` ranges from -0.2 m to +0.2 m. `phase` may instead be a numeric angle in radians, and zero
 amplitude produces straight beds. Each crop line also receives an independent deterministic crop
 phase, shifting its first crop within the available end margin while retaining exact along-line
@@ -157,7 +162,12 @@ spacing. This crop phase is separate from both the shared bed wave phase and per
 Crop spacing defaults to `0.2` m (200 mm) and is measured along the curved path. Field geometry determines the
 number and length of lines—20--100 total lines and lengths above 100 m are typical guidance, not
 enforced limits. `row_spacing` and `row_jitter` belong to legacy row mode and cannot be combined
-with `beds`.
+with `planting`.
+
+The same mapping models a fixed lateral GPS calibration error. `gps_lateral_offset` is a signed
+distance in metres and defaults to zero. Every bed and crop line planted in one pass receives the
+same offset along its local normal. The sign reverses for the next pass to model the planter
+turning around. The nominal bed fitting and line counts do not change.
 
 The field hierarchy uses stable, domain-separated random streams. Changing crop geometry or the
 number of crops in one row does not change the field and row layouts of its siblings. World crop
