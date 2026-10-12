@@ -212,7 +212,7 @@ TEST_CASE("world snapshot round-trip preserves exact state") {
   CHECK(cropsim::serialise_snapshot(restored) == first_snapshot);
 }
 
-TEST_CASE("version 3 snapshots have deterministic bytes") {
+TEST_CASE("version 4 snapshots have deterministic bytes") {
   const auto first =
       cropsim::serialise_snapshot(cropsim::world_from_yaml(description));
   const auto second =
@@ -949,6 +949,11 @@ generators:
   REQUIRE(world.size() == 2U);
   CHECK(world.crops()[0] == cropsim::Crop{0U, 2.0, 2.0, 0.2});
   CHECK(world.crops()[1] == cropsim::Crop{1U, 4.0, 2.0, 0.2});
+  CHECK(world.rails().empty());
+  REQUIRE(world.crop_lines().size() == 1U);
+  CHECK_FALSE(world.crop_lines().front().bed_id());
+  CHECK(world.crop_lines().front().points() ==
+        std::vector<cropsim::RailPoint>{{1.0, 2.0}, {5.0, 2.0}});
 }
 
 TEST_CASE("hierarchical morphology is stable when an earlier row grows") {
@@ -1065,7 +1070,7 @@ TEST_CASE("spatial inputs reject invalid geometry and query bounds") {
                   std::invalid_argument);
 }
 
-TEST_CASE("version 3 rejects altered spatial index data") {
+TEST_CASE("version 4 rejects altered spatial index data") {
   const cropsim::World world(0, {{0, 0, 0, 0.5}, {1, 2, 2, 0.5}});
   const auto valid = cropsim::serialise_snapshot(world);
   auto crop_bytes = 8U + 4U + 8U + 8U;

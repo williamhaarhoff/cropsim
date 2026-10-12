@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
+#include <optional>
 #include <vector>
 
 namespace cropsim {
@@ -42,6 +43,95 @@ struct Aabb {
   double max_y{};
 
   [[nodiscard]] bool operator==(const Aabb &other) const noexcept;
+};
+
+struct RailPoint final {
+  double x{};
+  double y{};
+
+  [[nodiscard]] bool operator==(const RailPoint &other) const noexcept;
+};
+
+enum class RailKind : std::uint8_t {
+  nominal_traversal,
+  actual_traversal,
+  nominal_bed_center,
+  real_bed_center
+};
+
+class Rail final {
+public:
+  Rail(std::uint64_t id, RailKind kind, std::optional<std::uint64_t> traversal_id,
+       std::optional<std::uint64_t> bed_id, std::vector<RailPoint> points);
+  // Compatibility constructor for source code which created v4 row rails.
+  Rail(std::uint64_t id, std::uint64_t field_index,
+       std::uint64_t row_index, std::vector<RailPoint> points);
+
+  [[nodiscard]] std::uint64_t id() const noexcept { return id_; }
+  [[nodiscard]] std::uint64_t field_index() const noexcept {
+    return field_index_;
+  }
+  [[nodiscard]] std::uint64_t row_index() const noexcept { return row_index_; }
+  [[nodiscard]] RailKind kind() const noexcept { return kind_; }
+  [[nodiscard]] const std::optional<std::uint64_t> &traversal_id() const noexcept { return traversal_id_; }
+  [[nodiscard]] const std::optional<std::uint64_t> &bed_id() const noexcept { return bed_id_; }
+  [[nodiscard]] const std::vector<RailPoint> &points() const noexcept {
+    return points_;
+  }
+  [[nodiscard]] double length() const noexcept { return cumulative_lengths_.back(); }
+  [[nodiscard]] RailPoint position_at(double distance) const;
+  [[nodiscard]] RailPoint tangent_at(double distance) const;
+  [[nodiscard]] bool operator==(const Rail &other) const noexcept;
+
+private:
+  [[nodiscard]] std::size_t segment_at(double distance) const;
+
+  std::uint64_t id_{};
+  std::uint64_t field_index_{};
+  std::uint64_t row_index_{};
+  RailKind kind_{RailKind::actual_traversal};
+  std::optional<std::uint64_t> traversal_id_;
+  std::optional<std::uint64_t> bed_id_;
+  std::vector<RailPoint> points_;
+  std::vector<double> cumulative_lengths_;
+};
+
+class CropLine final {
+public:
+  CropLine(std::uint64_t id, std::optional<std::uint64_t> bed_id,
+           std::uint64_t field_index, std::uint64_t row_index,
+           std::vector<RailPoint> points,
+           std::optional<std::uint64_t> first_crop_id = {},
+           std::optional<std::uint64_t> crop_count = {});
+  [[nodiscard]] std::uint64_t id() const noexcept { return id_; }
+  [[nodiscard]] const std::optional<std::uint64_t> &bed_id() const noexcept { return bed_id_; }
+  [[nodiscard]] std::uint64_t field_index() const noexcept { return field_index_; }
+  [[nodiscard]] std::uint64_t row_index() const noexcept { return row_index_; }
+  [[nodiscard]] const std::vector<RailPoint> &points() const noexcept { return points_; }
+  [[nodiscard]] const std::optional<std::uint64_t> &first_crop_id() const noexcept { return first_crop_id_; }
+  [[nodiscard]] const std::optional<std::uint64_t> &crop_count() const noexcept { return crop_count_; }
+  [[nodiscard]] double length() const noexcept { return cumulative_lengths_.back(); }
+  [[nodiscard]] RailPoint position_at(double distance) const;
+  [[nodiscard]] RailPoint tangent_at(double distance) const;
+  [[nodiscard]] bool operator==(const CropLine &) const noexcept;
+private:
+  [[nodiscard]] std::size_t segment_at(double distance) const;
+  std::uint64_t id_{}; std::optional<std::uint64_t> bed_id_;
+  std::uint64_t field_index_{}; std::uint64_t row_index_{};
+  std::vector<RailPoint> points_; std::vector<double> cumulative_lengths_;
+  std::optional<std::uint64_t> first_crop_id_, crop_count_;
+};
+
+struct Traversal final {
+  std::uint64_t id{}, field_index{}, pass_index{};
+  std::vector<std::uint64_t> nominal_rail_ids, actual_rail_ids, bed_ids;
+  [[nodiscard]] bool operator==(const Traversal &) const noexcept;
+};
+
+struct Bed final {
+  std::uint64_t id{}, traversal_id{};
+  std::vector<std::uint64_t> nominal_rail_ids, real_rail_ids, crop_line_ids;
+  [[nodiscard]] bool operator==(const Bed &) const noexcept;
 };
 
 [[nodiscard]] Aabb crop_bounds(const Crop &crop);
@@ -84,7 +174,9 @@ private:
 
 class World final {
 public:
-  World(std::uint64_t seed, std::vector<Crop> crops);
+  World(std::uint64_t seed, std::vector<Crop> crops,
+        std::vector<Rail> rails = {}, std::vector<CropLine> crop_lines = {},
+        std::vector<Traversal> traversals = {}, std::vector<Bed> beds = {});
 
   [[nodiscard]] std::uint64_t seed() const noexcept { return seed_; }
   [[nodiscard]] const std::vector<Crop> &crops() const noexcept {
@@ -93,6 +185,12 @@ public:
   [[nodiscard]] const SpatialIndex &spatial_index() const noexcept {
     return spatial_index_;
   }
+  [[nodiscard]] const std::vector<Rail> &rails() const noexcept {
+    return rails_;
+  }
+  [[nodiscard]] const std::vector<CropLine> &crop_lines() const noexcept { return crop_lines_; }
+  [[nodiscard]] const std::vector<Traversal> &traversals() const noexcept { return traversals_; }
+  [[nodiscard]] const std::vector<Bed> &beds() const noexcept { return beds_; }
   [[nodiscard]] std::size_t size() const noexcept { return crops_.size(); }
   [[nodiscard]] std::vector<std::size_t> query(const Aabb &bounds) const;
   [[nodiscard]] bool operator==(const World &other) const noexcept;
@@ -100,6 +198,10 @@ public:
 private:
   std::uint64_t seed_{};
   std::vector<Crop> crops_;
+  std::vector<Rail> rails_;
+  std::vector<CropLine> crop_lines_;
+  std::vector<Traversal> traversals_;
+  std::vector<Bed> beds_;
   SpatialIndex spatial_index_;
 };
 

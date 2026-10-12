@@ -142,7 +142,7 @@ std::vector<Point2> sine_line(const Point2 direction, const Point2 normal,
   return result;
 }
 
-std::vector<RowSegment>
+FieldGenerationResult
 generate_bedded_rows(const YAML::Node &node, const FieldRegion &field,
                      const GenerationKey key, const double headland,
                      double angle) {
@@ -198,9 +198,8 @@ generate_bedded_rows(const YAML::Node &node, const FieldRegion &field,
   if (plantable.empty()) {
     throw std::runtime_error("field headland leaves no plantable area");
   }
-  std::vector<RowSegment> result;
+  FieldGenerationResult result;
   std::uint64_t row_index = 0U;
-  std::uint64_t bed_index = 0U;
   for (const auto &component : plantable) {
     const auto bounds = projected_bounds(component, direction, normal);
     const auto width = bounds.max_across - bounds.min_across;
@@ -215,7 +214,7 @@ generate_bedded_rows(const YAML::Node &node, const FieldRegion &field,
       throw std::overflow_error("field bed count overflow");
     }
     const auto bed_count = static_cast<std::size_t>(raw_count);
-    if (bed_count > result.max_size() / 10U) {
+    if (bed_count > result.rows.max_size() / 10U) {
       throw std::overflow_error("field bed line count overflow");
     }
     const auto occupied = static_cast<double>(bed_count - 1U) * center_spacing;
@@ -225,7 +224,22 @@ generate_bedded_rows(const YAML::Node &node, const FieldRegion &field,
         std::max(center_spacing, bounds.max_along - bounds.min_along);
     const auto first = bounds.min_along - extension;
     const auto last = bounds.max_along + extension;
-    for (std::size_t bed = 0; bed < bed_count; ++bed, ++bed_index) {
+    const auto beds_per_pass=planting.lines_per_bed.size();
+    const auto pass_count=(bed_count+beds_per_pass-1U)/beds_per_pass;
+    const auto traversal_base=result.traversals.size();
+    for(std::size_t pass=0;pass<pass_count;++pass){
+      const auto begin_bed=pass*beds_per_pass, end_bed=std::min(bed_count,begin_bed+beds_per_pass);
+      const auto centre=first_bed+(static_cast<double>(begin_bed+end_bed-1U)/2.0)*center_spacing;
+      auto phase_stream=RandomStream(key.child(bed_wave_domain,pass).value);
+      const auto phase=random_phase?2.0*pi*phase_stream.uniform_open():explicit_phase;
+      auto nominal=sine_line(direction,normal,first,last,centre,0,0,wavelength,0);
+      auto actual=sine_line(direction,normal,first,last,centre,planting_offset(planting,pass),amplitude,wavelength,phase);
+      LogicalTraversal traversal{field.seed_index,static_cast<std::uint64_t>(pass),{},{},{}};
+      for(auto &s:geometry::clip_path(component,nominal,field.seed_index,0,top_width,std::nullopt)){if(pass%2U)std::reverse(s.path.begin(),s.path.end());traversal.nominal_paths.push_back(std::move(s.path));}
+      for(auto &s:geometry::clip_path(component,actual,field.seed_index,0,top_width,std::nullopt)){if(pass%2U)std::reverse(s.path.begin(),s.path.end());traversal.actual_paths.push_back(std::move(s.path));}
+      result.traversals.push_back(std::move(traversal));
+    }
+    for (std::size_t bed = 0; bed < bed_count; ++bed) {
       const auto lines_per_bed =
           planting.lines_per_bed[bed % planting.lines_per_bed.size()];
       const auto line_spacing =
@@ -233,37 +247,44 @@ generate_bedded_rows(const YAML::Node &node, const FieldRegion &field,
       const auto pass_index = bed / planting.lines_per_bed.size();
       const auto bed_across =
           first_bed + static_cast<double>(bed) * center_spacing;
-      auto phase_stream =
-          RandomStream(key.child(bed_wave_domain, bed_index).value);
+      auto phase_stream = RandomStream(key.child(bed_wave_domain, pass_index).value);
       const auto phase = random_phase ? 2.0 * pi * phase_stream.uniform_open()
                                       : explicit_phase;
+      const auto pass_begin=pass_index*beds_per_pass;
+      const auto pass_end=std::min(bed_count,pass_begin+beds_per_pass);
+      const auto pass_centre=first_bed+(static_cast<double>(pass_begin+pass_end-1U)/2.0)*center_spacing;
+      const auto bed_from_pass=bed_across-pass_centre;
+      auto nominal_bed=sine_line(direction,normal,first,last,pass_centre,bed_from_pass,0,wavelength,0);
+      auto real_bed=sine_line(direction,normal,first,last,pass_centre,bed_from_pass+planting_offset(planting,pass_index),amplitude,wavelength,phase);
+      LogicalBed logical_bed;logical_bed.traversal_index=traversal_base+pass_index;
+      for(auto &s:geometry::clip_path(component,nominal_bed,field.seed_index,0,line_spacing,std::nullopt)){if(pass_index%2U)std::reverse(s.path.begin(),s.path.end());logical_bed.nominal_paths.push_back(std::move(s.path));}
+      for(auto &s:geometry::clip_path(component,real_bed,field.seed_index,0,line_spacing,std::nullopt)){if(pass_index%2U)std::reverse(s.path.begin(),s.path.end());logical_bed.real_paths.push_back(std::move(s.path));}
+      const auto logical_bed_index=result.beds.size();
+      result.traversals[traversal_base+pass_index].bed_indices.push_back(logical_bed_index);
       for (std::size_t line = 0; line < lines_per_bed; ++line) {
         if (row_index == std::numeric_limits<std::uint64_t>::max()) {
           throw std::overflow_error("field row index overflow");
         }
         auto line_offset =
             (static_cast<double>(line) + 0.5) * line_spacing - top_width / 2.0;
-        if (planting.gps_lateral_offset != 0.0) {
-          line_offset += planting_offset(planting, pass_index);
-        }
         const auto path = sine_line(direction, normal, first, last, bed_across,
-                                    line_offset, amplitude, wavelength, phase);
+                                    line_offset+planting_offset(planting,pass_index), amplitude, wavelength, phase);
         auto crop_phase_stream =
             RandomStream(key.child(crop_phase_domain, row_index).value);
         const auto crop_phase = crop_phase_stream.uniform_open();
         auto segments = geometry::clip_path(component, path, field.seed_index,
                                             row_index, line_spacing,
                                             crop_phase);
-        if (segments.size() > result.max_size() - result.size()) {
+        if (segments.size() > result.rows.max_size() - result.rows.size()) {
           throw std::overflow_error("field row segment count overflow");
         }
-        result.insert(result.end(), std::make_move_iterator(segments.begin()),
-                      std::make_move_iterator(segments.end()));
+        for(auto &segment:segments){segment.bed_index=logical_bed_index;if(pass_index%2U)std::reverse(segment.path.begin(),segment.path.end());logical_bed.row_indices.push_back(result.rows.size());result.rows.push_back(std::move(segment));}
         ++row_index;
       }
+      result.beds.push_back(std::move(logical_bed));
     }
   }
-  if (result.empty()) {
+  if (result.rows.empty()) {
     throw std::runtime_error("field is too narrow for a complete bed");
   }
   return result;
@@ -287,7 +308,7 @@ ParallelRowFieldGenerator::generate(const YAML::Node &node,
         !std::isfinite(offset)) {
       throw std::invalid_argument("invalid parallel-row field parameters");
     }
-    return generate_bedded_rows(node, field, key, headland, angle + offset);
+    return generate_bedded_rows(node, field, key, headland, angle + offset).rows;
   }
   const auto spacing =
       node["row_spacing"] ? node["row_spacing"].as<double>() : 0.75;
@@ -349,6 +370,13 @@ ParallelRowFieldGenerator::generate(const YAML::Node &node,
     }
   }
   return result;
+}
+
+FieldGenerationResult ParallelRowFieldGenerator::generate_layout(const YAML::Node &node,const FieldRegion &field,const GenerationKey key) const {
+  if(!node["planting"]) return {generate(node,field,key),{},{}};
+  const auto headland=node["headland"]?node["headland"].as<double>():0.5;
+  const auto offset=node["orientation_offset"]?node["orientation_offset"].as<double>():0.0;
+  return generate_bedded_rows(node,field,key,headland,orientation(node,field.boundary)+offset);
 }
 
 void register_builtin_field_generators(FieldGeneratorFactory &factory) {

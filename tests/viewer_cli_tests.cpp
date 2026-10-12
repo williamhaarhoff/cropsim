@@ -24,6 +24,13 @@ TEST_CASE("viewer selects occupancy and diagnostic leaf modes") {
           cropsim::viewer::ViewMode::diagnostic_leaves);
 }
 
+TEST_CASE("viewer can start with the rail overlay enabled") {
+    const char* defaults[] = {"cropsim_viewer", "world.yaml"};
+    CHECK_FALSE(cropsim::viewer::parse_options(2, defaults).show_rails);
+    const char* rails[] = {"cropsim_viewer", "world.yaml", "--rails"};
+    CHECK(cropsim::viewer::parse_options(3, rails).show_rails);
+}
+
 TEST_CASE("viewer loads snapshots without a display") {
     const auto path = std::filesystem::path(CROPSIM_VIEWER_TEST_DIR) / "viewer-world.snapshot";
     std::filesystem::create_directories(path.parent_path());

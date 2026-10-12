@@ -8,7 +8,7 @@
 
 namespace cropsim {
 
-inline constexpr std::uint32_t world_snapshot_version = 3;
+inline constexpr std::uint32_t world_snapshot_version = 5;
 
 [[nodiscard]] std::vector<std::byte> serialise_snapshot(const World& world);
 [[nodiscard]] World deserialise_snapshot(const std::vector<std::byte>& snapshot);

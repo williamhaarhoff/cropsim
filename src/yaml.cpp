@@ -104,7 +104,8 @@ World world_from_yaml(const std::string_view yaml,
     }
   }
 
-  return World(seed, std::move(crops));
+  return World(seed, std::move(crops), context.take_rails(), context.take_crop_lines(),
+               context.take_traversals(), context.take_beds());
 }
 
 } // namespace cropsim

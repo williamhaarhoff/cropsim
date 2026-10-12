@@ -13,7 +13,7 @@ generators:
         center_spacing: 2.0
         lines_per_bed: [7,7,7]
         top_width: 1.8
-        wave: {amplitude: 0.0}
+        wave: {amplitude: 0.1}
       row:
         gentype: linear
         crop_spacing: 0.25

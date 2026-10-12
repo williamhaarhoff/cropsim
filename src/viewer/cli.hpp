@@ -14,6 +14,8 @@ struct Options {
     std::filesystem::path input_path;
     bool check_only{};
     bool smoke_test{};
+    bool show_rails{};
+    bool show_crop_lines{};
     ViewMode view_mode{ViewMode::occupancy};
 };
 

@@ -50,6 +50,7 @@ class Reader final {
         std::memcpy(&value, &bits, sizeof(value));
         return value;
     }
+    std::uint8_t byte() { require(1U); return static_cast<std::uint8_t>(std::to_integer<unsigned int>(input_[offset_++])); }
 
     void expect_magic() {
         require(magic.size());
@@ -61,6 +62,9 @@ class Reader final {
     }
 
     [[nodiscard]] bool finished() const noexcept { return offset_ == input_.size(); }
+    [[nodiscard]] std::size_t remaining() const noexcept {
+        return input_.size() - offset_;
+    }
 
   private:
     void require(const std::size_t amount) const {
@@ -111,6 +115,37 @@ std::vector<std::byte> serialise_snapshot(const World& world) {
     for (const auto reference : index.references()) {
         append_integer(output, static_cast<std::uint64_t>(reference));
     }
+    append_integer(output, static_cast<std::uint64_t>(world.traversals().size()));
+    for (const auto &traversal : world.traversals()) {
+        append_integer(output,traversal.id); append_integer(output,traversal.field_index); append_integer(output,traversal.pass_index);
+        for (const auto *ids : {&traversal.nominal_rail_ids,&traversal.actual_rail_ids,&traversal.bed_ids}) { append_integer(output,static_cast<std::uint64_t>(ids->size())); for(auto id:*ids) append_integer(output,id); }
+    }
+    append_integer(output, static_cast<std::uint64_t>(world.beds().size()));
+    for (const auto &bed : world.beds()) {
+        append_integer(output,bed.id); append_integer(output,bed.traversal_id);
+        for (const auto *ids : {&bed.nominal_rail_ids,&bed.real_rail_ids,&bed.crop_line_ids}) { append_integer(output,static_cast<std::uint64_t>(ids->size())); for(auto id:*ids) append_integer(output,id); }
+    }
+    append_integer(output, static_cast<std::uint64_t>(world.rails().size()));
+    for (const auto& rail : world.rails()) {
+        append_integer(output, rail.id());
+        append_integer(output, static_cast<std::uint8_t>(rail.kind()));
+        append_integer(output, *rail.traversal_id());
+        append_integer(output, rail.bed_id() ? *rail.bed_id() : UINT64_MAX);
+        append_integer(output, static_cast<std::uint64_t>(rail.points().size()));
+        for (const auto& point : rail.points()) {
+            append_double(output, point.x);
+            append_double(output, point.y);
+        }
+    }
+    append_integer(output, static_cast<std::uint64_t>(world.crop_lines().size()));
+    for (const auto &line: world.crop_lines()) {
+        append_integer(output,line.id()); append_integer(output,line.bed_id()?*line.bed_id():UINT64_MAX);
+        append_integer(output,line.field_index()); append_integer(output,line.row_index());
+        append_integer(output,line.first_crop_id()?*line.first_crop_id():UINT64_MAX);
+        append_integer(output,line.crop_count()?*line.crop_count():UINT64_MAX);
+        append_integer(output,static_cast<std::uint64_t>(line.points().size()));
+        for(const auto &p:line.points()){append_double(output,p.x);append_double(output,p.y);}
+    }
     return output;
 }
 
@@ -118,7 +153,8 @@ World deserialise_snapshot(const std::vector<std::byte>& snapshot) {
     Reader reader(snapshot);
     reader.expect_magic();
     const auto version = reader.integer<std::uint32_t>();
-    if (version != 1U && version != 2U && version != world_snapshot_version) {
+    if (version != 1U && version != 2U && version != 3U &&
+        version != 4U && version != world_snapshot_version) {
         throw std::runtime_error("unsupported world snapshot version");
     }
     const auto seed = reader.integer<std::uint64_t>();
@@ -150,12 +186,11 @@ World deserialise_snapshot(const std::vector<std::byte>& snapshot) {
         }
         crops.emplace_back(id, x, y, std::move(leaves));
     }
-    World world(seed, std::move(crops));
     if (version == 1U) {
         if (!reader.finished()) {
             throw std::runtime_error("world snapshot has trailing data");
         }
-        return world;
+        return World(seed, std::move(crops));
     }
 
     const Aabb stored_bounds{reader.floating_point(), reader.floating_point(),
@@ -164,7 +199,7 @@ World deserialise_snapshot(const std::vector<std::byte>& snapshot) {
     const auto columns = reader.integer<std::uint64_t>();
     const auto rows = reader.integer<std::uint64_t>();
     const auto offsets_count = reader.integer<std::uint64_t>();
-    const auto& expected = world.spatial_index();
+    const SpatialIndex expected(crops);
     if (!(stored_bounds == expected.bounds()) || stored_cell_size != expected.cell_size() ||
         columns != expected.columns() || rows != expected.rows() ||
         offsets_count != expected.cell_offsets().size()) {
@@ -184,10 +219,66 @@ World deserialise_snapshot(const std::vector<std::byte>& snapshot) {
             throw std::runtime_error("world snapshot spatial index references are invalid");
         }
     }
+    if (version <= 3U) {
+        if (!reader.finished()) {
+            throw std::runtime_error("world snapshot has trailing data");
+        }
+        return World(seed, std::move(crops));
+    }
+    if (version == 4U) {
+      const auto rail_count=reader.integer<std::uint64_t>(); std::vector<CropLine> lines; lines.reserve(static_cast<std::size_t>(rail_count));
+      for(std::uint64_t i=0;i<rail_count;++i){ const auto id=reader.integer<std::uint64_t>(); const auto field=reader.integer<std::uint64_t>(); const auto row=reader.integer<std::uint64_t>(); const auto n=reader.integer<std::uint64_t>(); if(id!=i||n<2U||n>reader.remaining()/16U) throw std::runtime_error("world snapshot rail metadata is invalid"); std::vector<RailPoint> p; p.reserve(static_cast<std::size_t>(n)); for(std::uint64_t j=0;j<n;++j)p.push_back({reader.floating_point(),reader.floating_point()}); try{lines.emplace_back(i,std::nullopt,field,row,std::move(p));}catch(const std::invalid_argument&){throw std::runtime_error("world snapshot rail geometry is invalid");}}
+      if (!reader.finished()) {
+          throw std::runtime_error("world snapshot has trailing data");
+      }
+      return World(seed,std::move(crops),{},std::move(lines));
+    }
+    auto read_ids=[&reader](){ const auto n=reader.integer<std::uint64_t>(); if(n>reader.remaining()/8U) throw std::runtime_error("world snapshot association count is invalid"); std::vector<std::uint64_t> v;v.reserve(static_cast<std::size_t>(n));while(v.size()<n)v.push_back(reader.integer<std::uint64_t>());return v;};
+    const auto traversal_count=reader.integer<std::uint64_t>(); std::vector<Traversal> traversals; traversals.reserve(static_cast<std::size_t>(traversal_count));
+    for(std::uint64_t i=0;i<traversal_count;++i){Traversal t; t.id=reader.integer<std::uint64_t>();t.field_index=reader.integer<std::uint64_t>();t.pass_index=reader.integer<std::uint64_t>();t.nominal_rail_ids=read_ids();t.actual_rail_ids=read_ids();t.bed_ids=read_ids();if(t.id!=i)throw std::runtime_error("invalid traversal ID");traversals.push_back(std::move(t));}
+    const auto bed_count=reader.integer<std::uint64_t>(); std::vector<Bed> beds;beds.reserve(static_cast<std::size_t>(bed_count));
+    for(std::uint64_t i=0;i<bed_count;++i){Bed b;b.id=reader.integer<std::uint64_t>();b.traversal_id=reader.integer<std::uint64_t>();b.nominal_rail_ids=read_ids();b.real_rail_ids=read_ids();b.crop_line_ids=read_ids();if(b.id!=i)throw std::runtime_error("invalid bed ID");beds.push_back(std::move(b));}
+    const auto rail_count = reader.integer<std::uint64_t>();
+    constexpr std::size_t minimum_rail_bytes = 4U * sizeof(std::uint64_t) +
+                                               4U * sizeof(double);
+    if (rail_count > static_cast<std::uint64_t>(std::vector<Rail>{}.max_size()) ||
+        rail_count > reader.remaining() / minimum_rail_bytes) {
+        throw std::runtime_error("world snapshot rail count is invalid");
+    }
+    std::vector<Rail> rails;
+    rails.reserve(static_cast<std::size_t>(rail_count));
+    for (std::uint64_t rail_index = 0; rail_index < rail_count; ++rail_index) {
+        const auto id = reader.integer<std::uint64_t>();
+        const auto kind_value = reader.byte();
+        const auto traversal_id = reader.integer<std::uint64_t>();
+        const auto bed_value = reader.integer<std::uint64_t>();
+        const auto point_count = reader.integer<std::uint64_t>();
+        if (id != rail_index || point_count < 2U ||
+            point_count > static_cast<std::uint64_t>(std::vector<RailPoint>{}.max_size()) ||
+            point_count > reader.remaining() / (2U * sizeof(double))) {
+            throw std::runtime_error("world snapshot rail metadata is invalid");
+        }
+        std::vector<RailPoint> points;
+        points.reserve(static_cast<std::size_t>(point_count));
+        for (std::uint64_t point_index = 0; point_index < point_count;
+             ++point_index) {
+            points.push_back({reader.floating_point(), reader.floating_point()});
+        }
+        try {
+            if(kind_value>static_cast<std::uint8_t>(RailKind::real_bed_center)) throw std::invalid_argument("kind");
+            rails.emplace_back(id, static_cast<RailKind>(kind_value), traversal_id,
+                               bed_value==UINT64_MAX?std::optional<std::uint64_t>{}:std::optional<std::uint64_t>{bed_value}, std::move(points));
+        } catch (const std::invalid_argument&) {
+            throw std::runtime_error("world snapshot rail geometry is invalid");
+        }
+    }
+    const auto line_count=reader.integer<std::uint64_t>(); std::vector<CropLine> lines;lines.reserve(static_cast<std::size_t>(line_count));
+    for(std::uint64_t i=0;i<line_count;++i){const auto id=reader.integer<std::uint64_t>(),bed=reader.integer<std::uint64_t>(),field=reader.integer<std::uint64_t>(),row=reader.integer<std::uint64_t>(),first=reader.integer<std::uint64_t>(),count_value=reader.integer<std::uint64_t>(),n=reader.integer<std::uint64_t>();if(id!=i||n<2||n>reader.remaining()/16U)throw std::runtime_error("invalid crop-line metadata");std::vector<RailPoint> p;p.reserve(static_cast<std::size_t>(n));for(std::uint64_t j=0;j<n;++j)p.push_back({reader.floating_point(),reader.floating_point()});try{lines.emplace_back(id,bed==UINT64_MAX?std::optional<std::uint64_t>{}:std::optional<std::uint64_t>{bed},field,row,std::move(p),first==UINT64_MAX?std::optional<std::uint64_t>{}:std::optional<std::uint64_t>{first},count_value==UINT64_MAX?std::optional<std::uint64_t>{}:std::optional<std::uint64_t>{count_value});}catch(const std::invalid_argument&){throw std::runtime_error("invalid crop-line geometry");}}
     if (!reader.finished()) {
         throw std::runtime_error("world snapshot has trailing data");
     }
-    return world;
+    try { return World(seed, std::move(crops), std::move(rails), std::move(lines), std::move(traversals), std::move(beds)); }
+    catch(const std::invalid_argument &) { throw std::runtime_error("invalid world hierarchy"); }
 }
 
 void save_snapshot(const World& world, const std::filesystem::path& path) {

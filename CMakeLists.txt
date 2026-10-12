@@ -50,7 +50,7 @@ if(CROPSIM_BUILD_TESTS)
     enable_testing()
     find_package(doctest REQUIRED)
     add_executable(cropsim_tests tests/world_tests.cpp tests/terminal_image_tests.cpp
-        tests/modifier_field_tests.cpp tests/landscape_tests.cpp)
+        tests/modifier_field_tests.cpp tests/landscape_tests.cpp tests/rail_tests.cpp)
     target_link_libraries(cropsim_tests PRIVATE cropsim::cropsim doctest::doctest)
     target_compile_definitions(cropsim_tests PRIVATE
         CROPSIM_TEST_ARTIFACT_DIR="${CMAKE_CURRENT_BINARY_DIR}/test-artifacts"
@@ -77,6 +77,8 @@ if(CROPSIM_BUILD_VIEWER)
     set(CROPSIM_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/viewer-shaders")
     set(CROPSIM_VERTEX_SPV "${CROPSIM_SHADER_DIR}/crop.vert.spv")
     set(CROPSIM_FRAGMENT_SPV "${CROPSIM_SHADER_DIR}/crop.frag.spv")
+    set(CROPSIM_RAIL_VERTEX_SPV "${CROPSIM_SHADER_DIR}/rail.vert.spv")
+    set(CROPSIM_RAIL_FRAGMENT_SPV "${CROPSIM_SHADER_DIR}/rail.frag.spv")
     add_custom_command(OUTPUT "${CROPSIM_VERTEX_SPV}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CROPSIM_SHADER_DIR}"
         COMMAND ${GLSLC_EXECUTABLE} -fshader-stage=vertex
@@ -87,8 +89,19 @@ if(CROPSIM_BUILD_VIEWER)
         COMMAND ${GLSLC_EXECUTABLE} -fshader-stage=fragment
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/viewer/crop.frag" -o "${CROPSIM_FRAGMENT_SPV}"
         DEPENDS src/viewer/crop.frag VERBATIM)
+    add_custom_command(OUTPUT "${CROPSIM_RAIL_VERTEX_SPV}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CROPSIM_SHADER_DIR}"
+        COMMAND ${GLSLC_EXECUTABLE} -fshader-stage=vertex
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/viewer/rail.vert" -o "${CROPSIM_RAIL_VERTEX_SPV}"
+        DEPENDS src/viewer/rail.vert VERBATIM)
+    add_custom_command(OUTPUT "${CROPSIM_RAIL_FRAGMENT_SPV}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CROPSIM_SHADER_DIR}"
+        COMMAND ${GLSLC_EXECUTABLE} -fshader-stage=fragment
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/viewer/rail.frag" -o "${CROPSIM_RAIL_FRAGMENT_SPV}"
+        DEPENDS src/viewer/rail.frag VERBATIM)
     add_custom_target(cropsim_viewer_shaders DEPENDS
-        "${CROPSIM_VERTEX_SPV}" "${CROPSIM_FRAGMENT_SPV}")
+        "${CROPSIM_VERTEX_SPV}" "${CROPSIM_FRAGMENT_SPV}"
+        "${CROPSIM_RAIL_VERTEX_SPV}" "${CROPSIM_RAIL_FRAGMENT_SPV}")
 
     add_library(cropsim_viewer_cli STATIC src/viewer/cli.cpp)
     target_link_libraries(cropsim_viewer_cli PUBLIC cropsim::cropsim)
@@ -102,6 +115,7 @@ if(CROPSIM_BUILD_VIEWER)
     add_custom_command(TARGET cropsim_viewer POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${CROPSIM_VERTEX_SPV}" "${CROPSIM_FRAGMENT_SPV}"
+                "${CROPSIM_RAIL_VERTEX_SPV}" "${CROPSIM_RAIL_FRAGMENT_SPV}"
                 "$<TARGET_FILE_DIR:cropsim_viewer>")
     if(CROPSIM_BUILD_TESTS)
         add_executable(cropsim_viewer_tests tests/viewer_cli_tests.cpp)

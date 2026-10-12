@@ -32,6 +32,14 @@ struct Instance {
     float blue;
 };
 
+struct RailVertex {
+    float x;
+    float y;
+    float red;
+    float green;
+    float blue;
+};
+
 struct Camera {
     double x{};
     double y{};
@@ -87,10 +95,29 @@ cropsim::View2D camera_view(const Camera& camera, const int width, const int hei
 }
 
 Camera framed_camera(const cropsim::World& world, const int width, const int height) {
-    if (world.size() == 0U) {
+    if (world.size() == 0U && world.rails().empty() && world.crop_lines().empty()) {
         return {};
     }
-    const auto bounds = world.spatial_index().bounds();
+    auto bounds = world.size() == 0U
+                      ? cropsim::Aabb{std::numeric_limits<double>::infinity(),
+                                     std::numeric_limits<double>::infinity(),
+                                     -std::numeric_limits<double>::infinity(),
+                                     -std::numeric_limits<double>::infinity()}
+                      : world.spatial_index().bounds();
+    for (const auto& rail : world.rails()) {
+        for (const auto point : rail.points()) {
+            bounds.min_x = std::min(bounds.min_x, point.x);
+            bounds.min_y = std::min(bounds.min_y, point.y);
+            bounds.max_x = std::max(bounds.max_x, point.x);
+            bounds.max_y = std::max(bounds.max_y, point.y);
+        }
+    }
+    for (const auto& line : world.crop_lines()) {
+        for (const auto point : line.points()) {
+            bounds.min_x = std::min(bounds.min_x, point.x); bounds.min_y = std::min(bounds.min_y, point.y);
+            bounds.max_x = std::max(bounds.max_x, point.x); bounds.max_y = std::max(bounds.max_y, point.y);
+        }
+    }
     const auto world_width = std::max(bounds.max_x - bounds.min_x, 0.001);
     const auto world_height = std::max(bounds.max_y - bounds.min_y, 0.001);
     const auto aspect =
@@ -114,8 +141,9 @@ std::array<float, 3> diagnostic_color(const std::uint64_t crop_id, const std::si
 
 class Viewer final {
   public:
-    Viewer(const cropsim::World& world, const cropsim::viewer::ViewMode view_mode)
-        : world_(world), view_mode_(view_mode) {
+    Viewer(const cropsim::World& world, const cropsim::viewer::ViewMode view_mode,
+           const bool show_rails, const bool show_crop_lines)
+        : world_(world), rails_visible_(show_rails), crop_lines_visible_(show_crop_lines), view_mode_(view_mode) {
         if (!SDL_Init(SDL_INIT_VIDEO)) {
             throw std::runtime_error(SDL_GetError());
         }
@@ -138,6 +166,10 @@ class Viewer final {
                 SDL_ReleaseGPUBuffer(device_, instance_buffer_);
             if (pipeline_ != nullptr)
                 SDL_ReleaseGPUGraphicsPipeline(device_, pipeline_);
+            if (rail_buffer_ != nullptr)
+                SDL_ReleaseGPUBuffer(device_, rail_buffer_);
+            if (rail_pipeline_ != nullptr)
+                SDL_ReleaseGPUGraphicsPipeline(device_, rail_pipeline_);
             SDL_ReleaseWindowFromGPUDevice(device_, window_);
             SDL_DestroyGPUDevice(device_);
         }
@@ -165,7 +197,9 @@ class Viewer final {
                 const auto title =
                     "cropsim - " +
                     std::to_string(static_cast<int>(static_cast<double>(frames) / elapsed)) +
-                    " FPS - " + std::to_string(instances_.size()) + " crops";
+                    " FPS - " + std::to_string(instances_.size()) + " leaves - " +
+                    std::to_string(world_.rails().size()) + " rails (" + (rails_visible_ ? "on" : "off") + "), " +
+                    std::to_string(world_.crop_lines().size()) + " crop lines (" + (crop_lines_visible_ ? "on)" : "off)");
                 SDL_SetWindowTitle(window_, title.c_str());
                 frames = 0U;
                 title_time = now;
@@ -203,6 +237,27 @@ class Viewer final {
         SDL_ReleaseGPUShader(device_, fragment);
         if (pipeline_ == nullptr)
             throw std::runtime_error(SDL_GetError());
+
+        vertex = load_shader(device_, shader_path("rail.vert.spv"),
+                             SDL_GPU_SHADERSTAGE_VERTEX, 1U);
+        fragment = load_shader(device_, shader_path("rail.frag.spv"),
+                               SDL_GPU_SHADERSTAGE_FRAGMENT, 0U);
+        const SDL_GPUVertexBufferDescription rail_buffer_description{
+            0U, sizeof(RailVertex), SDL_GPU_VERTEXINPUTRATE_VERTEX, 0U};
+        const std::array<SDL_GPUVertexAttribute, 2> rail_attributes{{
+            {0U, 0U, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, offsetof(RailVertex, x)},
+            {1U, 0U, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, offsetof(RailVertex, red)},
+        }};
+        info.vertex_shader = vertex;
+        info.fragment_shader = fragment;
+        info.vertex_input_state = {&rail_buffer_description, 1U,
+                                   rail_attributes.data(), rail_attributes.size()};
+        info.primitive_type = SDL_GPU_PRIMITIVETYPE_LINELIST;
+        rail_pipeline_ = SDL_CreateGPUGraphicsPipeline(device_, &info);
+        SDL_ReleaseGPUShader(device_, vertex);
+        SDL_ReleaseGPUShader(device_, fragment);
+        if (rail_pipeline_ == nullptr)
+            throw std::runtime_error(SDL_GetError());
     }
 
     bool handle_event(const SDL_Event& event) {
@@ -239,6 +294,12 @@ class Viewer final {
                                  ? cropsim::viewer::ViewMode::diagnostic_leaves
                                  : cropsim::viewer::ViewMode::occupancy;
                 instances_dirty_ = true;
+            } else if (event.key.key == SDLK_R && !event.key.repeat) {
+                rails_visible_ = !rails_visible_;
+                instances_dirty_ = true;
+            } else if (event.key.key == SDLK_L && !event.key.repeat) {
+                crop_lines_visible_ = !crop_lines_visible_;
+                instances_dirty_ = true;
             } else {
                 const auto view = camera_view(camera_, width_, height_);
                 const auto pan_x = (view.max_x - view.min_x) * 0.1;
@@ -249,7 +310,6 @@ class Viewer final {
                     camera_.x -= pan_x;
                     break;
                 case SDLK_RIGHT:
-                case SDLK_L:
                     camera_.x += pan_x;
                     break;
                 case SDLK_UP:
@@ -331,6 +391,66 @@ class Viewer final {
             SDL_SubmitGPUCommandBuffer(command);
             SDL_ReleaseGPUTransferBuffer(device_, transfer);
         }
+        rail_vertices_.clear();
+        if (rails_visible_) {
+            std::size_t vertex_count{};
+            for (const auto& rail : world_.rails()) {
+                if (rail.points().size() - 1U >
+                    (std::numeric_limits<std::size_t>::max() - vertex_count) / 2U) {
+                    throw std::overflow_error("rail viewer vertex count overflow");
+                }
+                vertex_count += (rail.points().size() - 1U) * 2U;
+            }
+            rail_vertices_.reserve(vertex_count);
+            for (const auto& rail : world_.rails()) {
+                for (std::size_t index = 1U; index < rail.points().size(); ++index) {
+                    const std::array<std::array<float,3>,4> colors{{{{0.95F,0.75F,0.15F}},{{0.15F,0.9F,1.0F}},{{0.7F,0.35F,0.95F}},{{0.2F,0.95F,0.4F}}}};
+                    const auto color=colors[static_cast<std::size_t>(rail.kind())];
+                    const auto append = [&](const cropsim::RailPoint point) {
+                        rail_vertices_.push_back({
+                            static_cast<float>(point.x - camera_.x),
+                            static_cast<float>(point.y - camera_.y),
+                            color[0], color[1], color[2]});
+                    };
+                    append(rail.points()[index - 1U]);
+                    append(rail.points()[index]);
+                }
+            }
+        }
+        if(crop_lines_visible_){for(const auto &line:world_.crop_lines()){for(std::size_t i=1;i<line.points().size();++i){for(const auto p:{line.points()[i-1],line.points()[i]})rail_vertices_.push_back({static_cast<float>(p.x-camera_.x),static_cast<float>(p.y-camera_.y),1.0F,0.3F,0.25F});}}}
+        const auto rail_size = std::max<std::size_t>(
+            sizeof(RailVertex), rail_vertices_.size() * sizeof(RailVertex));
+        if (rail_size > std::numeric_limits<Uint32>::max() ||
+            rail_vertices_.size() > std::numeric_limits<Uint32>::max()) {
+            throw std::overflow_error("rail viewer GPU buffer limit exceeded");
+        }
+        if (rail_size > rail_capacity_) {
+            SDL_WaitForGPUIdle(device_);
+            if (rail_buffer_ != nullptr)
+                SDL_ReleaseGPUBuffer(device_, rail_buffer_);
+            const SDL_GPUBufferCreateInfo buffer_info{
+                SDL_GPU_BUFFERUSAGE_VERTEX, static_cast<Uint32>(rail_size), 0U};
+            rail_buffer_ = SDL_CreateGPUBuffer(device_, &buffer_info);
+            rail_capacity_ = rail_size;
+        }
+        if (!rail_vertices_.empty()) {
+            const auto byte_size = rail_vertices_.size() * sizeof(RailVertex);
+            const SDL_GPUTransferBufferCreateInfo transfer_info{
+                SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, static_cast<Uint32>(byte_size), 0U};
+            auto* transfer = SDL_CreateGPUTransferBuffer(device_, &transfer_info);
+            auto* mapped = SDL_MapGPUTransferBuffer(device_, transfer, false);
+            std::memcpy(mapped, rail_vertices_.data(), byte_size);
+            SDL_UnmapGPUTransferBuffer(device_, transfer);
+            auto* command = SDL_AcquireGPUCommandBuffer(device_);
+            auto* copy = SDL_BeginGPUCopyPass(command);
+            const SDL_GPUTransferBufferLocation source{transfer, 0U};
+            const SDL_GPUBufferRegion destination{
+                rail_buffer_, 0U, static_cast<Uint32>(byte_size)};
+            SDL_UploadToGPUBuffer(copy, &source, &destination, false);
+            SDL_EndGPUCopyPass(copy);
+            SDL_SubmitGPUCommandBuffer(command);
+            SDL_ReleaseGPUTransferBuffer(device_, transfer);
+        }
         instances_dirty_ = false;
     }
 
@@ -361,6 +481,13 @@ class Viewer final {
             SDL_BindGPUVertexBuffers(pass, 0U, &binding, 1U);
             SDL_DrawGPUPrimitives(pass, 6U, static_cast<Uint32>(instances_.size()), 0U, 0U);
         }
+        if (!rail_vertices_.empty()) {
+            SDL_BindGPUGraphicsPipeline(pass, rail_pipeline_);
+            const SDL_GPUBufferBinding binding{rail_buffer_, 0U};
+            SDL_BindGPUVertexBuffers(pass, 0U, &binding, 1U);
+            SDL_DrawGPUPrimitives(pass, static_cast<Uint32>(rail_vertices_.size()),
+                                  1U, 0U, 0U);
+        }
         SDL_EndGPURenderPass(pass);
         SDL_SubmitGPUCommandBuffer(command);
     }
@@ -369,14 +496,20 @@ class Viewer final {
     SDL_Window* window_{};
     SDL_GPUDevice* device_{};
     SDL_GPUGraphicsPipeline* pipeline_{};
+    SDL_GPUGraphicsPipeline* rail_pipeline_{};
     SDL_GPUBuffer* instance_buffer_{};
+    SDL_GPUBuffer* rail_buffer_{};
     std::size_t instance_capacity_{};
+    std::size_t rail_capacity_{};
     std::vector<Instance> instances_;
+    std::vector<RailVertex> rail_vertices_;
     Camera camera_;
     int width_{1280};
     int height_{720};
     bool dragging_{};
     bool instances_dirty_{};
+    bool rails_visible_{};
+    bool crop_lines_visible_{};
     cropsim::viewer::ViewMode view_mode_;
 };
 
@@ -390,7 +523,7 @@ int main(const int argc, const char* const* argv) {
             std::cout << "loaded " << world.size() << " crops\n";
             return 0;
         }
-        Viewer viewer(world, options.view_mode);
+        Viewer viewer(world, options.view_mode, options.show_rails, options.show_crop_lines);
         viewer.run(options.smoke_test);
         return 0;
     } catch (const std::exception& error) {

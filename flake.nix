@@ -42,7 +42,7 @@
         installPhase = ''
           runHook preInstall
           mkdir -p $out/bin
-          cp cropsim_viewer crop.vert.spv crop.frag.spv $out/bin/
+          cp cropsim_viewer crop.vert.spv crop.frag.spv rail.vert.spv rail.frag.spv $out/bin/
           runHook postInstall
         '';
       };

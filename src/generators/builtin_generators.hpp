@@ -44,6 +44,9 @@ public:
   [[nodiscard]] std::vector<RowSegment> generate(const YAML::Node &,
                                                  const FieldRegion &,
                                                  GenerationKey) const override;
+  [[nodiscard]] FieldGenerationResult generate_layout(const YAML::Node &,
+                                                       const FieldRegion &,
+                                                       GenerationKey) const override;
 };
 
 class LinearRowGenerator final : public RowGenerator {

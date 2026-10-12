@@ -240,18 +240,46 @@ void FieldSetGenerator::generate(const YAML::Node &node,
   for (std::size_t field_index = 0; field_index < fields.size();
        ++field_index) {
     const auto field_key = key.child(field_domain, field_index);
-    const auto rows =
-        field_generator->generate(field_node, fields[field_index], field_key);
+    const auto layout = field_generator->generate_layout(field_node, fields[field_index], field_key);
+    const auto &rows = layout.rows;
     if (rows.empty()) {
       throw std::runtime_error("field generator produced no rows");
     }
+    std::vector<std::uint64_t> traversal_ids;
+    traversal_ids.reserve(layout.traversals.size());
+    for(const auto &logical:layout.traversals) traversal_ids.push_back(context.add_traversal(logical.field_index,logical.pass_index));
+    std::vector<std::uint64_t> bed_ids;
+    bed_ids.reserve(layout.beds.size());
+    for(const auto &logical:layout.beds){const auto traversal=traversal_ids.at(logical.traversal_index);const auto bed=context.add_bed(traversal);context.traversal_add_bed(traversal,bed);bed_ids.push_back(bed);}
+    const auto add_paths=[&](const std::vector<std::vector<Point2>>& paths,RailKind kind,std::uint64_t traversal,std::optional<std::uint64_t> bed){for(const auto &path:paths){std::vector<RailPoint> points;points.reserve(path.size());for(const auto p:path)points.push_back({p.x,p.y});context.add_attachment_rail(kind,traversal,bed,std::move(points));}};
+    for(std::size_t i=0;i<layout.traversals.size();++i){add_paths(layout.traversals[i].nominal_paths,RailKind::nominal_traversal,traversal_ids[i],{});add_paths(layout.traversals[i].actual_paths,RailKind::actual_traversal,traversal_ids[i],{});}
+    for(std::size_t i=0;i<layout.beds.size();++i){const auto t=traversal_ids[layout.beds[i].traversal_index];add_paths(layout.beds[i].nominal_paths,RailKind::nominal_bed_center,t,bed_ids[i]);add_paths(layout.beds[i].real_paths,RailKind::real_bed_center,t,bed_ids[i]);}
     for (std::size_t row_index = 0; row_index < rows.size(); ++row_index) {
+      std::vector<RailPoint> rail_points;
+      if (rows[row_index].path.empty()) {
+        rail_points = {{rows[row_index].begin.x, rows[row_index].begin.y},
+                       {rows[row_index].end.x, rows[row_index].end.y}};
+      } else {
+        rail_points.reserve(rows[row_index].path.size());
+        for (const auto point : rows[row_index].path) {
+          rail_points.push_back({point.x, point.y});
+        }
+      }
+      if (!rows[row_index].bed_index && rows[row_index].row_index % 2U != 0U) {
+        std::reverse(rail_points.begin(), rail_points.end());
+      }
       const auto row_key = field_key.child(row_domain, row_index);
       const auto positions =
           row_generator->generate(row_node, rows[row_index], row_key);
       if (positions.empty()) {
         throw std::runtime_error("row generator produced no crops");
       }
+      const auto first_crop_id = context.next_id();
+      const auto bed_id=rows[row_index].bed_index?std::optional<std::uint64_t>{bed_ids.at(*rows[row_index].bed_index)}:std::nullopt;
+      const auto crop_line_id=context.add_crop_line(bed_id, rows[row_index].field_index,
+                            rows[row_index].row_index, std::move(rail_points),
+                            first_crop_id, static_cast<std::uint64_t>(positions.size()));
+      if(bed_id) context.bed_add_crop_line(*bed_id,crop_line_id);
       if (positions.size() > destination.max_size() - destination.size()) {
         throw std::overflow_error(
             "hierarchical crop destination size overflow");

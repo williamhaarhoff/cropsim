@@ -27,6 +27,11 @@ Options parse_options(const int argc, const char* const* argv) {
             options.view_mode = ViewMode::diagnostic_leaves;
             continue;
         }
+        if (argument == "--rails") {
+            options.show_rails = true;
+            continue;
+        }
+        if (argument == "--crop-lines") { options.show_crop_lines = true; continue; }
         if (has_input) {
             throw std::invalid_argument("exactly one world input must be specified");
         }
@@ -41,7 +46,7 @@ Options parse_options(const int argc, const char* const* argv) {
             options.input_path = argument;
         } else {
             throw std::invalid_argument("usage: cropsim_viewer <path> "
-                                        "[--check|--smoke] [--diagnostic-colors] "
+                                        "[--check|--smoke] [--diagnostic-colors] [--rails] [--crop-lines] "
                                         "(or --yaml/--snapshot <path>)");
         }
         has_input = true;

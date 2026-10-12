@@ -132,7 +132,8 @@ access tracks. `terrain` (`relief`, `scale`), `infrastructure` (`lane_width`, `t
 `curvature`), and `parcels` (`area_variation`, `boundary_irregularity`, `minimum_area`,
 `minimum_width`) are optional mappings; see `examples/farm_landscape.yaml`. A count of one omits
 the through-lane. Terrain, corridors, access, hedges, ditches, and cadastral boundaries are layout
-metadata only and never enter `World` or snapshot v3. The public landscape API can produce a
+metadata only and never enter `World` or snapshots. Generated planting-row rails are the sole
+exception and are persisted independently of the landscape metadata. The public landscape API can produce a
 labeled grayscale/terminal preview or deterministic SVG. Typical 100 m or longer rows and 20--100
 crop lines are guidance arising from field geometry, not enforced limits.
 
@@ -165,8 +166,8 @@ whose values are the crop-line counts on those beds. Thus `[7, 6, 7]` plants thr
 with seven, six, and seven lines; `[7, 7, 7]` plants seven lines on each of three beds. The pattern
 repeats across the field, and a final partial pass uses its corresponding prefix. The default is
 `[6]`, giving six lines at 0.3 m spacing and half-spacing margins on the default 1.8 m bed top.
-Every bed receives its own deterministic random phase, while all lines planted on that bed remain
-fixed offsets from the shared path. Amplitude is peak displacement in metres, so
+Every planter pass receives one deterministic random phase. Its traversed centre, every bed in
+that pass, and every crop line are fixed local-normal offsets from that shared path. Amplitude is peak displacement in metres, so
 `0.2` ranges from -0.2 m to +0.2 m. `phase` may instead be a numeric angle in radians, and zero
 amplitude produces straight beds. Each crop line also receives an independent deterministic crop
 phase, shifting its first crop within the available end margin while retaining exact along-line
@@ -185,7 +186,17 @@ The field hierarchy uses stable, domain-separated random streams. Changing crop 
 number of crops in one row does not change the field and row layouts of its siblings. World crop
 IDs remain sequential in canonical field, row, segment, and crop order.
 
-World snapshots use a versioned, little-endian binary representation. The built-in headless
+`World` stores the immutable hierarchy `Traversal -> Bed -> CropLine`. A bedded pass has nominal
+and actual traversal rails; each bed has nominal and real centre rails. Only these four typed rail
+kinds are attachable. Crop lines are persistent geometry with optional crop-ID ranges, but are not
+attachment rails. Legacy and custom rows create unassociated crop lines only. Odd passes reverse
+all paths to model back-and-forth motion, and disconnected clipped pieces remain separate records.
+Both rails and crop lines support position and tangent sampling by arc distance.
+
+World snapshots use a versioned, little-endian binary representation. Version 5 persists crops,
+the crop spatial index, traversals, beds, typed rails, crop lines, and associations. Versions 1--3
+remain readable without paths; v4 row rails migrate to unassociated crop lines with unknown crop ranges.
+The built-in headless
 renderer orthographically projects all leaves and produces their binary occupancy union as
 in-memory 8-bit grayscale images and portable PGM files.
 
@@ -221,7 +232,7 @@ Bindings run in YAML order after the base distribution is sampled. `relative` mu
 last. When a parameter distribution explicitly supplies both `min` and `max`, those bounds also
 clamp the final modified value; an explicit `clamp` overrides them. Scale and leaf count are sampled once per crop, while leaf dimensions, offset, and
 orientation are sampled once per leaf. Modifier definitions and evaluated values are transient;
-snapshot v3 contains only the resulting crop geometry. Use `render_modifier_field` with an
+snapshot v4 contains only the resulting crop geometry and generated rails. Use `render_modifier_field` with an
 optional value range to create a `GrayscaleImage`, then `write_pgm` or `format_terminal_image` for
 file and CI previews.
 
@@ -244,11 +255,16 @@ build-viewer/cropsim_viewer world.cropsim
 
 The viewer detects YAML descriptions and binary snapshots from their contents. The explicit `--yaml` and `--snapshot` forms remain available when needed.
 
-Drag with the left mouse button to pan, or pan with the arrow keys or Vim's `H`, `J`, `K`, and `L` keys. Use the wheel or `+` and `-` to zoom, press `F` to frame the world, and `Q` or Escape to exit. Pass `--check` to validate and load an input without opening a display.
+Drag with the left mouse button to pan, or pan with the arrow keys or `H`, `J`, and `K`. Use the wheel or `+` and `-` to zoom, press `F` to frame the world, and `Q` or Escape to exit. Pass `--check` to validate and load an input without opening a display.
 
 The viewer starts in the canonical single-color occupancy mode. Press `C` to toggle deterministic
 per-leaf diagnostic colors, or start in that mode with `--diagnostic-colors`. These colors are
 derived in the viewer and are not stored in the world or snapshots.
+
+Press `R` to toggle attachment rails and `L` to toggle crop lines independently. Nominal
+traversals, actual traversals, nominal bed centres, real bed centres, and crop lines use distinct
+yellow, cyan, purple, green, and red colors. Use `--rails` and `--crop-lines` to enable either
+layer initially. The title reports both visibility states and record counts.
 
 `format_terminal_image` provides bounded ASCII previews for CI logs and ANSI truecolor half-block previews for interactive diagnostics. `cropsim::testing::compare_images` emits expected, actual, and difference previews and writes full-resolution PGM artifacts when an image comparison fails.
 

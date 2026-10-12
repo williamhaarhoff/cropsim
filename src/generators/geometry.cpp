@@ -206,7 +206,7 @@ clip_line(const Polygon2 &polygon, const Point2 begin, const Point2 end,
       std::swap(first, last);
     }
     result.push_back(
-        {field_index, row_index, first, last, polygon, row_spacing, {}, {}});
+        {field_index, row_index, first, last, polygon, row_spacing, {}, {}, {}});
   }
   std::sort(result.begin(), result.end(), [dx, dy](const auto &left, const auto &right) {
     return left.begin.x * dx + left.begin.y * dy <
@@ -248,7 +248,7 @@ clip_path(const Polygon2 &polygon, const std::vector<Point2> &path,
       clipped.push_back({bg::get<0>(point), bg::get<1>(point)});
     }
     result.push_back({field_index, row_index, clipped.front(), clipped.back(),
-                      polygon, row_spacing, std::move(clipped), crop_phase});
+                      polygon, row_spacing, std::move(clipped), crop_phase, {}});
   }
   std::sort(result.begin(), result.end(), [dx, dy](const auto &left,
                                                    const auto &right) {

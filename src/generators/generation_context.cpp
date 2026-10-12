@@ -102,6 +102,38 @@ Crop GenerationContext::make_crop(const double x, const double y,
   return make_crop(x, y, {{0.0, 0.0, radius, radius, 0.0}});
 }
 
+void GenerationContext::add_rail(const std::uint64_t field_index,
+                                 const std::uint64_t row_index,
+                                 std::vector<RailPoint> points) {
+  if (rails_.size() >= static_cast<std::size_t>(UINT64_MAX)) {
+    throw std::overflow_error("rail ID allocation overflow");
+  }
+  rails_.emplace_back(static_cast<std::uint64_t>(rails_.size()), field_index,
+                      row_index, std::move(points));
+}
+
+std::vector<Rail> GenerationContext::take_rails() noexcept {
+  return std::move(rails_);
+}
+std::uint64_t GenerationContext::add_crop_line(std::optional<std::uint64_t> bed_id,
+                                      const std::uint64_t field_index,
+                                      const std::uint64_t row_index,
+                                      std::vector<RailPoint> points,
+                                      std::optional<std::uint64_t> first,
+                                      std::optional<std::uint64_t> count) {
+  crop_lines_.emplace_back(static_cast<std::uint64_t>(crop_lines_.size()), bed_id,
+                           field_index,row_index,std::move(points),first,count);
+  return static_cast<std::uint64_t>(crop_lines_.size()-1U);
+}
+std::vector<CropLine> GenerationContext::take_crop_lines() noexcept { return std::move(crop_lines_); }
+std::uint64_t GenerationContext::add_traversal(const std::uint64_t f,const std::uint64_t p){const auto id=static_cast<std::uint64_t>(traversals_.size());traversals_.push_back({id,f,p,{},{},{}});return id;}
+std::uint64_t GenerationContext::add_bed(const std::uint64_t t){const auto id=static_cast<std::uint64_t>(beds_.size());beds_.push_back({id,t,{},{},{}});return id;}
+void GenerationContext::add_attachment_rail(const RailKind k,const std::uint64_t t,const std::optional<std::uint64_t> b,std::vector<RailPoint> p){const auto id=static_cast<std::uint64_t>(rails_.size());rails_.emplace_back(id,k,t,b,std::move(p));if(b){(k==RailKind::nominal_bed_center?beds_[*b].nominal_rail_ids:beds_[*b].real_rail_ids).push_back(id);}else{(k==RailKind::nominal_traversal?traversals_[t].nominal_rail_ids:traversals_[t].actual_rail_ids).push_back(id);}}
+void GenerationContext::traversal_add_bed(const std::uint64_t t,const std::uint64_t b){traversals_[t].bed_ids.push_back(b);}
+void GenerationContext::bed_add_crop_line(const std::uint64_t b,const std::uint64_t l){beds_[b].crop_line_ids.push_back(l);}
+std::vector<Traversal> GenerationContext::take_traversals() noexcept{return std::move(traversals_);}
+std::vector<Bed> GenerationContext::take_beds() noexcept{return std::move(beds_);}
+
 Crop GenerationContext::make_crop(const double x, const double y,
                                   std::vector<EllipseLeaf> leaves) {
   if (next_id_ == UINT64_MAX) {

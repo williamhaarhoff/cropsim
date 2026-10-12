@@ -40,7 +40,12 @@ struct RowSegment final {
   double row_spacing{};
   std::vector<Point2> path;
   std::optional<double> crop_phase;
+  std::optional<std::size_t> bed_index;
 };
+
+struct LogicalTraversal final { std::uint64_t field_index{}, pass_index{}; std::vector<std::vector<Point2>> nominal_paths, actual_paths; std::vector<std::size_t> bed_indices; };
+struct LogicalBed final { std::size_t traversal_index{}; std::vector<std::vector<Point2>> nominal_paths, real_paths; std::vector<std::size_t> row_indices; };
+struct FieldGenerationResult final { std::vector<RowSegment> rows; std::vector<LogicalTraversal> traversals; std::vector<LogicalBed> beds; };
 
 class PlacementGenerator {
 public:
@@ -57,6 +62,10 @@ public:
   [[nodiscard]] virtual std::vector<RowSegment>
   generate(const YAML::Node &node, const FieldRegion &field,
            GenerationKey key) const = 0;
+  [[nodiscard]] virtual FieldGenerationResult generate_layout(
+      const YAML::Node &node, const FieldRegion &field, GenerationKey key) const {
+    return {generate(node, field, key), {}, {}};
+  }
 };
 
 class RowGenerator {
